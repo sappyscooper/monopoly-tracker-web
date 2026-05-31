@@ -1,33 +1,22 @@
 import { useMemo, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Info, X } from 'lucide-react';
+import { AnimatePresence } from 'framer-motion';
+import { Info } from 'lucide-react';
 import { LineChart, Line, ResponsiveContainer } from 'recharts';
 import { useActiveSeason } from '../hooks/useActiveSeason';
 import { useGames } from '../hooks/useGames';
 import { calculateGamePoints, seasonLeaderboard, formatPoints } from '../utils/scoring';
 import GlassCard from '../components/GlassCard';
 import EmptyState from '../components/EmptyState';
+import Sheet from '../components/Sheet';
 
 const ACCENTS = ['#E8C96A', '#6EB5D4', '#E07B6A', '#d4a760', '#8EB5D4'];
 
 function InfoModal({ title, explanation, onClose }) {
   return (
-    <motion.div className="fixed inset-0 z-50 flex items-end justify-center p-4"
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <motion.div className="relative bg-[#1c1c22] rounded-3xl p-6 w-full max-w-lg"
-        initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
-        transition={{ type: 'spring', damping: 30, stiffness: 300 }}>
-        <div className="flex items-start justify-between mb-4">
-          <div>
-            <p className="text-xs text-[#8E8E93] uppercase tracking-wider mb-1">About This Stat</p>
-            <h3 className="text-xl font-bold">{title}</h3>
-          </div>
-          <button onClick={onClose} className="p-2 rounded-full bg-white/8 mt-1"><X size={16} /></button>
-        </div>
-        <p className="text-[#8E8E93] leading-relaxed">{explanation}</p>
-      </motion.div>
-    </motion.div>
+    <Sheet open title={title} subtitle="About this stat" onClose={onClose}>
+      <p className="secondary-text leading-relaxed">{explanation}</p>
+      <button className="secondary-button mt-5" onClick={onClose}>Done</button>
+    </Sheet>
   );
 }
 
@@ -35,12 +24,13 @@ function StatCard({ title, explanation, children }) {
   const [showInfo, setShowInfo] = useState(false);
   return (
     <>
-      <GlassCard className="p-4">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-[#8E8E93] uppercase tracking-wider">{title}</h3>
-          <button onClick={() => setShowInfo(true)} className="p-1.5 rounded-lg bg-white/5 text-[#8E8E93]">
+      <GlassCard>
+        <div className="flex items-center gap-2 mb-4">
+          <h3 className="card-title">{title}</h3>
+          <button onClick={() => setShowInfo(true)} className="grid min-h-8 min-w-8 place-items-center rounded-lg bg-white/5 text-[#8E8E93]" aria-label={`About ${title}`}>
             <Info size={14} />
           </button>
+          <span className="ml-auto text-sm text-[#8E8E93]">•</span>
         </div>
         {children}
       </GlassCard>
@@ -151,7 +141,9 @@ function computeStats(season, games) {
     const scores = gs.flatMap(g => Object.values(calculateGamePoints(g.placements || [], cameoWeight)));
     return scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
   };
-  const cameoDelta = avgScore(cameoGames) - avgScore(regularGames);
+  const cameoDelta = cameoGames.length > 0 && regularGames.length > 0
+    ? avgScore(cameoGames) - avgScore(regularGames)
+    : null;
 
   // Recent form
   const recentForm = {};
@@ -191,37 +183,72 @@ function computeStats(season, games) {
     podiumCounts, mostFirsts, mostLasts,
     headToHead, players,
     totalCameoAppearances: cameoPlacements.length, cameoRows, cameoDelta,
+    cameoGamesCount: cameoGames.length, regularGamesCount: regularGames.length,
     recentForm, streaks,
     projectedPoints, forecastHeadline,
   };
 }
 
 export default function StatsPage() {
-  const { activeSeason: season } = useActiveSeason();
-  const { games } = useGames(season?.id);
+  const { activeSeason: season, loading: seasonsLoading } = useActiveSeason();
+  const { games, loading: gamesLoading } = useGames(season?.id);
   const stats = useMemo(() => computeStats(season, games), [season, games]);
 
+  if (seasonsLoading || gamesLoading) return (
+    <div className="page">
+      <header className="app-header">
+        <div className="app-header-inner">
+          <h1 className="page-title">Season Stats</h1>
+        </div>
+      </header>
+      <div className="page-inner flex min-h-[60dvh] items-center justify-center">
+        <div className="secondary-text">Loading stats…</div>
+      </div>
+    </div>
+  );
+
   if (!season) return (
-    <div className="px-4 pt-14">
+    <div className="page">
+      <header className="app-header">
+        <div className="app-header-inner">
+          <h1 className="page-title">Season Stats</h1>
+        </div>
+      </header>
+      <div className="page-inner">
       <EmptyState icon="📊" title="No active season" message="Start a season to see your stats unfold." />
+      </div>
     </div>
   );
   if (!stats) return (
-    <div className="px-4 pt-14">
-      <h1 className="text-2xl font-bold mb-2">Season Stats</h1>
-      <p className="text-[#8E8E93] text-sm">{season.name}</p>
+    <div className="page">
+      <header className="app-header">
+        <div className="app-header-inner">
+          <div className="min-w-0">
+            <h1 className="page-title">Season Stats</h1>
+            <p className="secondary-text truncate">{season.name}</p>
+          </div>
+        </div>
+      </header>
+      <div className="page-inner">
       <div className="mt-8"><EmptyState icon="🎲" title="No games yet" message="Log your first game to see stats." /></div>
+      </div>
     </div>
   );
 
   const { leaderboard, players, headToHead, recentForm, streaks, projectedPoints, cameoRows } = stats;
 
   return (
-    <div className="px-4 pt-14 pb-6 space-y-4">
-      <div className="mb-2">
-        <h1 className="text-2xl font-bold">Season Stats</h1>
-        <p className="text-sm text-[#8E8E93]">{season.name}</p>
-      </div>
+    <div className="page">
+      <header className="app-header">
+        <div className="app-header-inner">
+          <div className="min-w-0">
+            <h1 className="page-title">Season Stats</h1>
+            <p className="secondary-text truncate">{season.name}</p>
+          </div>
+        </div>
+      </header>
+
+      <div className="page-inner space-y-4">
 
       {/* Card 1: Season at a Glance */}
       <StatCard title="Season at a Glance" explanation="A quick overview of where your season stands. Total Games counts every game logged. Est. Remaining is a rough projection based on end date. Highest Avg shows who earns the most points per game. Closest Rivals names the two players with the smallest average placing gap.">
@@ -235,7 +262,7 @@ export default function StatsPage() {
             <div key={i} className="bg-[#26262e] rounded-xl p-3">
               <p className="font-bold text-white text-base leading-tight truncate">{tile.value}</p>
               <p className="text-xs text-[#8E8E93] mt-1">{tile.sub}</p>
-              {tile.extra && <p className="text-[10px] text-[#8E8E93] italic mt-0.5">{tile.extra}</p>}
+              {tile.extra && <p className="text-xs text-[#8E8E93] italic mt-0.5">{tile.extra}</p>}
             </div>
           ))}
         </div>
@@ -258,7 +285,7 @@ export default function StatsPage() {
               <div key={row.player} className="flex items-center gap-2">
                 <span className="w-5 text-xs font-bold font-mono" style={{ color: ACCENTS[i] }}>{i + 1}</span>
                 <span className="flex-1 text-sm font-semibold truncate">{row.player}</span>
-                <div className="w-16 h-6">
+                <div className="h-7 w-16">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={row.sparkline.map((v, j) => ({ v, j }))}>
                       <Line type="monotone" dataKey="v" stroke={row.accent} strokeWidth={2} dot={false} />
@@ -266,7 +293,7 @@ export default function StatsPage() {
                   </ResponsiveContainer>
                 </div>
                 {badge && (
-                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                  <span className="text-xs font-semibold px-1.5 py-0.5 rounded-full"
                     style={{ color: badge.color, background: badge.bg }}>{badge.label}</span>
                 )}
                 <span className="font-mono font-bold text-sm w-10 text-right">{formatPoints(row.points)}</span>
@@ -351,25 +378,25 @@ export default function StatsPage() {
             </div>
           ))}
         </div>
-        <div className="overflow-x-auto scrollbar-hide">
+        <div className="overflow-x-auto scrollbar-hide -mx-1 px-1">
           <table className="text-xs">
             <thead>
               <tr>
-                <th className="w-10" />
+                <th className="sticky left-0 z-10 w-12 bg-[#1c1c22]" />
                 {players.map(p => <th key={p} className="w-9 text-center text-[#8E8E93] font-medium pb-1">{p.slice(0,4)}</th>)}
               </tr>
             </thead>
             <tbody>
               {players.map(row => (
                 <tr key={row}>
-                  <td className="text-[#8E8E93] font-medium pr-2 py-0.5">{row.slice(0,4)}</td>
+                  <td className="sticky left-0 z-10 bg-[#1c1c22] text-[#8E8E93] font-medium pr-2 py-0.5">{row.slice(0,4)}</td>
                   {players.map(col => {
                     const val = headToHead[row]?.[col];
                     const bg = val === null ? 'transparent'
                       : val < 2.5 ? '#6EB5D433'
                       : val > 3.5 ? '#E07B6A33' : '#ffffff10';
                     return (
-                      <td key={col} className="w-9 h-9 text-center rounded font-mono" style={{ background: bg }}>
+                      <td key={col} className="h-10 min-w-10 text-center rounded font-mono" style={{ background: bg }}>
                         {val !== null ? val.toFixed(1) : '—'}
                       </td>
                     );
@@ -385,14 +412,20 @@ export default function StatsPage() {
       {stats.totalCameoAppearances > 0 && (
         <StatCard title="Cameo Effect" explanation="Tracks guest players who joined without being in the regular season. The delta shows whether cameo games result in higher or lower average points for regular players vs games without guests.">
           <div className="rounded-xl p-3 mb-4"
-            style={{ background: Math.abs(stats.cameoDelta) < 0.3 ? '#ffffff10'
-              : stats.cameoDelta > 0 ? '#6EB5D433' : '#E07B6A33' }}>
+            style={{ background: stats.cameoDelta === null ? '#ffffff10'
+              : Math.abs(stats.cameoDelta) < 0.3 ? '#ffffff10'
+                : stats.cameoDelta > 0 ? '#6EB5D433' : '#E07B6A33' }}>
             <p className="font-bold text-base">
-              {Math.abs(stats.cameoDelta) < 0.3 ? 'Cameos are neutral'
-                : stats.cameoDelta > 0 ? `Cameos help! +${formatPoints(stats.cameoDelta)} pts avg`
-                : `Cameos hurt. ${formatPoints(stats.cameoDelta)} pts avg`}
+              {stats.cameoDelta === null ? 'Need a normal game baseline'
+                : Math.abs(stats.cameoDelta) < 0.3 ? 'Cameos are neutral'
+                  : stats.cameoDelta > 0 ? `Cameos help! +${formatPoints(stats.cameoDelta)} pts avg`
+                    : `Cameos hurt. ${formatPoints(stats.cameoDelta)} pts avg`}
             </p>
-            <p className="text-xs text-[#8E8E93] mt-0.5">vs. games without guests</p>
+            <p className="text-xs text-[#8E8E93] mt-0.5">
+              {stats.cameoDelta === null
+                ? `${stats.cameoGamesCount} cameo game${stats.cameoGamesCount === 1 ? '' : 's'}, ${stats.regularGamesCount} normal games`
+                : 'vs. games without guests'}
+            </p>
           </div>
           <div className="space-y-2">
             {cameoRows.map(c => (
@@ -420,7 +453,7 @@ export default function StatsPage() {
               <div key={p} className="flex items-center gap-2">
                 <span className="text-sm font-semibold flex-1 truncate">{p}</span>
                 {streak?.type === 'hot' && (
-                  <span className="text-[10px] font-semibold text-[#E8C96A]">🔥 {streak.count}-game streak</span>
+                <span className="text-xs font-semibold text-[#E8C96A]">🔥 {streak.count}-game streak</span>
                 )}
                 <div className="flex gap-1">
                   {Array(5).fill(null).map((_, i) => {
@@ -431,7 +464,7 @@ export default function StatsPage() {
                       : placing === 3 ? '#d4a760'
                       : '#32323c';
                     return (
-                      <div key={i} className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold font-mono"
+                      <div key={i} className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold font-mono"
                         style={{ background: bg, color: placing === 1 ? '#000' : '#fff' }}>
                         {placing !== null && placing !== undefined && placing > 3 ? placing : ''}
                       </div>
@@ -463,8 +496,9 @@ export default function StatsPage() {
             </div>
           ))}
         </div>
-        <p className="text-[10px] text-[#8E8E93] mt-3">Projection based on current avg pts/game</p>
+        <p className="text-xs text-[#8E8E93] mt-3">Projection based on current avg pts/game</p>
       </StatCard>
+      </div>
     </div>
   );
 }

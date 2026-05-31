@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, X, Trophy } from 'lucide-react';
+import { Plus, X } from 'lucide-react';
 import { collection, addDoc, doc, updateDoc, serverTimestamp, writeBatch, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useSeasons } from '../hooks/useSeasons';
@@ -8,6 +8,8 @@ import { useGames } from '../hooks/useGames';
 import GlassCard from '../components/GlassCard';
 import StatusPill from '../components/StatusPill';
 import EmptyState from '../components/EmptyState';
+import Sheet from '../components/Sheet';
+import { seasonLeaderboard, formatPoints } from '../utils/scoring';
 
 const DEFAULT_PLAYERS = ['Cheok', 'Cheng', 'Breydon', 'Ian', 'Jedd'];
 
@@ -15,10 +17,11 @@ function SeasonCard({ season, onLongPress }) {
   const { games } = useGames(season.id);
   const pressTimer = useRef(null);
 
-  const handleTouchStart = () => {
+  const handlePressStart = () => {
+    if (!season.isActive) return;
     pressTimer.current = setTimeout(() => onLongPress(season), 500);
   };
-  const handleTouchEnd = () => clearTimeout(pressTimer.current);
+  const handlePressEnd = () => clearTimeout(pressTimer.current);
 
   const fmt = (ts) => {
     if (!ts) return '?';
@@ -28,28 +31,28 @@ function SeasonCard({ season, onLongPress }) {
 
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-      onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd} onMouseLeave={handleTouchEnd}
-      onMouseUp={handleTouchEnd}>
-      <GlassCard tint={season.isActive ? 'gold' : undefined} className="p-4">
-        <div className="flex items-start justify-between mb-3">
-          <div>
-            <h2 className="text-base font-bold text-white">{season.name}</h2>
-            <p className="text-sm text-[#8E8E93] mt-0.5">{fmt(season.startDate)} – {fmt(season.endDate)}</p>
+      onTouchStart={handlePressStart} onTouchEnd={handlePressEnd}
+      onMouseDown={handlePressStart} onMouseLeave={handlePressEnd} onMouseUp={handlePressEnd}>
+      <GlassCard tint={season.isActive ? 'gold' : undefined}>
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="card-title truncate">{season.name}</h2>
+            <p className="secondary-text mt-1">{fmt(season.startDate)} – {fmt(season.endDate)}</p>
           </div>
           <StatusPill active={season.isActive} />
         </div>
-        <div className="flex gap-4 text-sm">
-          <div className="text-center">
-            <p className="font-bold text-white font-mono">{games.length}</p>
-            <p className="text-[#8E8E93] text-xs">games</p>
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <p className="number-text text-lg font-bold text-white">{games.length}</p>
+            <p className="section-label normal-case tracking-normal">games</p>
           </div>
-          <div className="text-center">
-            <p className="font-bold text-white font-mono">{season.regularPlayers?.length || 0}</p>
-            <p className="text-[#8E8E93] text-xs">players</p>
+          <div>
+            <p className="number-text text-lg font-bold text-white">{(season.regularPlayers || []).length}</p>
+            <p className="section-label normal-case tracking-normal">players</p>
           </div>
-          <div className="text-center">
-            <p className="font-bold text-white font-mono">{season.cameoWeight ?? 0.5}</p>
-            <p className="text-[#8E8E93] text-xs">cameo wt</p>
+          <div>
+            <p className="number-text text-lg font-bold text-white">{(season.cameoWeight ?? 0.5).toFixed(1)}×</p>
+            <p className="section-label normal-case tracking-normal">cameo</p>
           </div>
         </div>
       </GlassCard>
@@ -68,7 +71,16 @@ function CreateSeasonModal({ onClose, onCreated }) {
   const [saving, setSaving] = useState(false);
 
   const handleCreate = async () => {
-    if (!name.trim() || players.filter(p => p.trim()).length === 0) return;
+    const uniquePlayers = [];
+    const seen = new Set();
+    players.map(p => p.trim()).filter(Boolean).forEach(player => {
+      const key = player.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        uniquePlayers.push(player);
+      }
+    });
+    if (!name.trim() || uniquePlayers.length === 0) return;
     setSaving(true);
     try {
       const snap = await getDocs(collection(db, 'seasons'));
@@ -81,7 +93,7 @@ function CreateSeasonModal({ onClose, onCreated }) {
         name: name.trim(),
         startDate: new Date(startDate),
         endDate: new Date(endDate),
-        regularPlayers: players.map(p => p.trim()).filter(Boolean),
+        regularPlayers: uniquePlayers,
         cameoWeight,
         isActive: true,
         createdAt: serverTimestamp(),
@@ -91,97 +103,103 @@ function CreateSeasonModal({ onClose, onCreated }) {
   };
 
   return (
-    <motion.div className="fixed inset-0 z-50 flex flex-col justify-end"
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <motion.div className="relative bg-[#1c1c22] rounded-t-3xl p-6 max-h-[90dvh] overflow-y-auto"
-        initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
-        transition={{ type: 'spring', damping: 30, stiffness: 300 }}>
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-bold">New Season</h2>
-          <button onClick={onClose} className="p-2 rounded-full bg-white/8"><X size={18} /></button>
-        </div>
-        <div className="space-y-4">
+    <Sheet open title="Create Season" subtitle="Set up the group and cameo impact." onClose={onClose}>
+      <div className="space-y-4">
           <div>
-            <label className="text-xs text-[#8E8E93] uppercase tracking-wider mb-1.5 block">Season Name</label>
+            <label className="section-label mb-2 block">Season name</label>
             <input value={name} onChange={e => setName(e.target.value)}
-              className="w-full bg-[#26262e] rounded-xl px-4 py-3 text-white outline-none focus:ring-1 focus:ring-[#E8C96A]/40" />
+              autoFocus
+              placeholder="e.g. Semester 1 2026"
+              className="control" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs text-[#8E8E93] uppercase tracking-wider mb-1.5 block">Start</label>
+              <label className="section-label mb-2 block">Start</label>
               <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
-                className="w-full bg-[#26262e] rounded-xl px-4 py-3 text-white outline-none focus:ring-1 focus:ring-[#E8C96A]/40" />
+                className="control" />
             </div>
             <div>
-              <label className="text-xs text-[#8E8E93] uppercase tracking-wider mb-1.5 block">End</label>
+              <label className="section-label mb-2 block">End</label>
               <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
-                className="w-full bg-[#26262e] rounded-xl px-4 py-3 text-white outline-none focus:ring-1 focus:ring-[#E8C96A]/40" />
+                className="control" />
             </div>
           </div>
           <div>
-            <label className="text-xs text-[#8E8E93] uppercase tracking-wider mb-2 block">Players</label>
+            <label className="section-label mb-2 block">Players</label>
             <div className="space-y-2">
               {players.map((p, i) => (
                 <div key={i} className="flex gap-2">
                   <input value={p} onChange={e => setPlayers(prev => { const n=[...prev]; n[i]=e.target.value; return n; })}
-                    className="flex-1 bg-[#26262e] rounded-xl px-4 py-2.5 text-white outline-none" />
+                    placeholder={`Player ${i + 1}`}
+                    className="control flex-1" />
                   <button onClick={() => setPlayers(prev => prev.filter((_, j) => j !== i))}
-                    className="p-2.5 rounded-xl bg-[#E07B6A]/15 text-[#E07B6A]"><X size={16} /></button>
+                    className="icon-button bg-[#E07B6A]/15 text-[#E07B6A]" aria-label={`Remove ${p || 'player'}`}><X size={17} /></button>
                 </div>
               ))}
               {players.length < 8 && (
                 <button onClick={() => setPlayers(prev => [...prev, ''])}
-                  className="w-full py-2.5 rounded-xl bg-white/5 text-[#8E8E93] text-sm flex items-center justify-center gap-2">
+                  className="secondary-button !min-h-11 flex items-center justify-center gap-2 !text-sm">
                   <Plus size={16} /> Add Player
                 </button>
               )}
             </div>
           </div>
           <div>
-            <label className="text-xs text-[#8E8E93] uppercase tracking-wider mb-2 block">
-              Cameo Impact: <span className="text-[#E8C96A]">{cameoWeight.toFixed(2)}</span>
+            <label className="section-label mb-2 flex justify-between">
+              <span>Cameo Impact</span>
+              <span className="text-[#E8C96A]">{cameoWeight.toFixed(2)}×</span>
             </label>
             <input type="range" min="0" max="1" step="0.05" value={cameoWeight}
               onChange={e => setCameoWeight(parseFloat(e.target.value))}
               className="w-full accent-[#E8C96A]" />
           </div>
-          <div className="flex gap-3 pt-2">
-            <button onClick={onClose} className="flex-1 py-3 rounded-2xl bg-white/8 text-white font-semibold">Cancel</button>
+          <div className="space-y-3 pt-2">
             <button onClick={handleCreate} disabled={saving || !name.trim()}
-              className="flex-1 py-3 rounded-2xl bg-[#E8C96A] text-black font-bold disabled:opacity-50">
-              {saving ? 'Creating…' : 'Create'}
+              className="primary-button disabled:opacity-50">
+              {saving ? 'Creating…' : 'Create Season'}
             </button>
+            <button onClick={onClose} className="secondary-button">Cancel</button>
           </div>
-        </div>
-      </motion.div>
-    </motion.div>
+      </div>
+    </Sheet>
   );
 }
 
 function EndSeasonModal({ season, onClose, onConfirm }) {
+  const { games } = useGames(season?.id);
   const [confirming, setConfirming] = useState(false);
+  const standings = seasonLeaderboard(games || [], season?.regularPlayers || [], season?.cameoWeight ?? 0.5).slice(0, 3);
   const handleConfirm = async () => {
     setConfirming(true);
     await onConfirm(season);
   };
   return (
-    <motion.div className="fixed inset-0 z-50 flex items-center justify-center p-6"
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-      <div className="absolute inset-0 bg-black/70" onClick={onClose} />
-      <motion.div className="relative bg-[#1c1c22] rounded-3xl p-6 w-full max-w-sm"
-        initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
-        <h2 className="text-xl font-bold mb-2">End Season?</h2>
-        <p className="text-[#8E8E93] text-sm mb-6">"{season.name}" will be marked as ended. This cannot be undone.</p>
-        <div className="flex gap-3">
-          <button onClick={onClose} className="flex-1 py-3 rounded-2xl bg-white/8 text-white font-semibold">Cancel</button>
+    <Sheet open title="End Season?" subtitle={season.name} onClose={onClose}>
+      <div className="space-y-4">
+        {standings.length > 0 && (
+          <div className="card bg-[#26262e]">
+            <p className="section-label mb-3">Top standings</p>
+            <div className="space-y-2">
+              {standings.map((row, index) => (
+                <div key={row.player} className="flex items-center justify-between gap-3">
+                  <span className="number-text text-[#8E8E93]">#{index + 1}</span>
+                  <span className="flex-1 truncate font-semibold">{row.player}</span>
+                  <span className="number-text font-bold text-[#E8C96A]">{formatPoints(row.points)} pts</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <p className="secondary-text">This marks the season as ended and triggers the final champion/loser celebration.</p>
+        <div className="space-y-3">
           <button onClick={handleConfirm} disabled={confirming}
-            className="flex-1 py-3 rounded-2xl bg-[#E07B6A] text-white font-bold disabled:opacity-50">
+            className="destructive-button disabled:opacity-50">
             {confirming ? 'Ending…' : 'End Season'}
           </button>
+          <button onClick={onClose} className="secondary-button">Cancel</button>
         </div>
-      </motion.div>
-    </motion.div>
+      </div>
+    </Sheet>
   );
 }
 
@@ -195,31 +213,40 @@ export default function SeasonsPage() {
     setEndingSeason(null);
   };
 
-  if (loading) return <div className="flex items-center justify-center h-screen"><div className="text-[#8E8E93]">Loading…</div></div>;
+  if (loading) return (
+    <div className="page">
+      <div className="page-inner flex min-h-[60dvh] items-center justify-center">
+        <div className="secondary-text">Loading seasons…</div>
+      </div>
+    </div>
+  );
 
   return (
-    <div className="px-4 pt-14 pb-4">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Seasons</h1>
+    <div className="page">
+      <header className="app-header">
+        <div className="app-header-inner">
+          <h1 className="page-title">Seasons</h1>
         <button onClick={() => setShowCreate(true)}
-          className="p-2 rounded-full bg-[#E8C96A]/15 text-[#E8C96A]"
-          style={{ WebkitTapHighlightColor: 'transparent' }}>
+          className="icon-button bg-[#E8C96A] text-[#0a0a0f]"
+          aria-label="Create Season">
           <Plus size={22} />
         </button>
-      </div>
+        </div>
+      </header>
 
-      {seasons.length === 0 ? (
+      <div className="page-inner">
+      {(seasons || []).length === 0 ? (
         <EmptyState icon="🏆" title="No seasons yet"
-          message="Create your first season to get started"
+          message="Create your first season to start tracking"
           action={
             <button onClick={() => setShowCreate(true)}
-              className="mt-2 px-6 py-3 rounded-2xl bg-[#E8C96A] text-black font-bold">
+              className="primary-button mt-2 max-w-[240px]">
               Create Season
             </button>
           } />
       ) : (
         <div className="space-y-3">
-          {seasons.map((s, i) => (
+          {(seasons || []).map((s, i) => (
             <motion.div key={s.id} transition={{ delay: i * 0.05 }}>
               <SeasonCard season={s} onLongPress={setEndingSeason} />
             </motion.div>
@@ -231,6 +258,7 @@ export default function SeasonsPage() {
         {showCreate && <CreateSeasonModal onClose={() => setShowCreate(false)} onCreated={() => setShowCreate(false)} />}
         {endingSeason && <EndSeasonModal season={endingSeason} onClose={() => setEndingSeason(null)} onConfirm={handleEndSeason} />}
       </AnimatePresence>
+      </div>
     </div>
   );
 }

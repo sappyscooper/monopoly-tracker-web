@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { GripVertical, X, Plus, Check } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { GripVertical, X } from 'lucide-react';
 import {
   DndContext, closestCenter, KeyboardSensor, PointerSensor,
   useSensor, useSensors, TouchSensor
@@ -18,38 +18,43 @@ import GlassCard from '../components/GlassCard';
 import EmptyState from '../components/EmptyState';
 import { Link } from 'react-router-dom';
 
-function SortableRow({ entry, onToggleAbsent, onRemoveCameo }) {
+function SortableRow({ entry, placing, onToggleAbsent, onRemoveCameo }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: entry.id });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
 
   return (
     <div ref={setNodeRef} style={style}
-      className={`flex items-center gap-3 p-3 rounded-2xl ${
-        entry.isCameo ? 'bg-[#E8C96A]/8 ring-1 ring-[#E8C96A]/20' :
-        entry.isAbsent ? 'bg-white/3 opacity-50' : 'bg-[#26262e]'
+      className={`card flex items-center gap-3 !p-3 ${
+        entry.isCameo ? '!border-[#E8C96A]/25 !bg-[#E8C96A]/10' :
+        entry.isAbsent ? 'opacity-55' : '!bg-[#26262e]'
       }`}>
       {!entry.isAbsent && (
-        <div {...attributes} {...listeners} className="text-[#8E8E93] cursor-grab active:cursor-grabbing touch-none">
+        <button {...attributes} {...listeners} className="grid min-h-11 min-w-11 place-items-center text-[#8E8E93] touch-none" aria-label={`Drag ${entry.player}`}>
           <GripVertical size={18} />
-        </div>
+        </button>
       )}
-      {entry.isAbsent && <div className="w-[18px]" />}
+      {entry.isAbsent && <div className="min-w-11" />}
+      <div className={`number-text grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-bold ${
+        placing === 1 && !entry.isAbsent ? 'bg-[#E8C96A] text-black' : 'bg-white/8 text-[#8E8E93]'
+      }`}>
+        {placing}
+      </div>
       <div className="flex-1 min-w-0">
-        <p className="font-semibold text-sm truncate">{entry.player}</p>
-        {entry.isAbsent && <p className="text-xs text-[#8E8E93]">Last place (absent)</p>}
-        {entry.isCameo && <p className="text-xs text-[#E8C96A]">Guest</p>}
+        <p className={`card-title truncate ${entry.isAbsent ? 'text-[#8E8E93]' : ''}`}>{entry.player}</p>
+        {entry.isAbsent && <p className="text-xs font-semibold text-[#E07B6A]">Last Place</p>}
+        {entry.isCameo && <p className="text-xs font-semibold text-[#E8C96A]">Guest</p>}
       </div>
       {!entry.isCameo && !entry.isAbsent && (
         <button onClick={() => onToggleAbsent(entry.id)}
-          className="text-xs px-2 py-1 rounded-lg bg-white/8 text-[#8E8E93]">Absent</button>
+          className="min-h-9 rounded-full bg-white/8 px-3 text-xs font-semibold text-[#8E8E93]">Absent</button>
       )}
       {!entry.isCameo && entry.isAbsent && (
         <button onClick={() => onToggleAbsent(entry.id)}
-          className="text-xs px-2 py-1 rounded-lg bg-[#6EB5D4]/15 text-[#6EB5D4]">Undo</button>
+          className="min-h-9 rounded-full bg-[#6EB5D4]/15 px-3 text-xs font-semibold text-[#6EB5D4]">Undo</button>
       )}
       {entry.isCameo && (
         <button onClick={() => onRemoveCameo(entry.id)}
-          className="p-1.5 rounded-lg bg-white/8 text-[#8E8E93]"><X size={14} /></button>
+          className="icon-button !min-h-9 !min-w-9 rounded-xl bg-white/8 text-[#8E8E93]" aria-label={`Remove ${entry.player}`}><X size={14} /></button>
       )}
     </div>
   );
@@ -108,6 +113,7 @@ export default function LogGamePage() {
     });
     absentRegulars.forEach(e => {
       placements.push({ player: e.player, placing, isCameo: false, isAbsent: true });
+      placing++;
     });
     return placements;
   };
@@ -138,10 +144,17 @@ export default function LogGamePage() {
   };
 
   if (!season) return (
-    <div className="px-4 pt-14">
+    <div className="page">
+      <header className="app-header">
+        <div className="app-header-inner">
+          <h1 className="page-title">Log Game</h1>
+        </div>
+      </header>
+      <div className="page-inner">
       <EmptyState icon="📋" title="No active season"
         message="Create an active season before logging a game."
-        action={<Link to="/seasons" className="mt-2 px-6 py-3 rounded-2xl bg-[#E8C96A] text-black font-bold inline-block">Go to Seasons</Link>} />
+        action={<Link to="/seasons" className="primary-button mt-2 inline-flex max-w-[240px] items-center justify-center">Go to Seasons</Link>} />
+      </div>
     </div>
   );
 
@@ -149,28 +162,23 @@ export default function LogGamePage() {
   const absentEntries = entries.filter(e => e.isAbsent);
 
   return (
-    <div className="px-4 pt-14 pb-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Log Game</h1>
+    <div className="page">
+      <header className="app-header">
+        <div className="app-header-inner">
+        <h1 className="page-title">Log Game</h1>
         <input type="date" value={gameDate} onChange={e => setGameDate(e.target.value)}
-          className="bg-[#26262e] text-white text-sm rounded-xl px-3 py-2 outline-none" />
-      </div>
+          className="control max-w-[168px] !min-h-11 !py-2" />
+        </div>
+      </header>
 
-      <p className="text-xs text-[#8E8E93] mb-3 uppercase tracking-wider">Drag to set finishing order</p>
+      <div className="page-inner">
+      <p className="section-label mb-3">Finishing Order</p>
 
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={sortableEntries.map(e => e.id)} strategy={verticalListSortingStrategy}>
           <div className="space-y-2">
             {sortableEntries.map((entry, i) => (
-              <div key={entry.id} className="relative">
-                <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full flex items-center justify-center
-                  text-xs font-bold z-10 bg-[#0a0a0f] text-[#E8C96A] border border-[#E8C96A]/30">
-                  {i + 1}
-                </div>
-                <div className="ml-6">
-                  <SortableRow entry={entry} onToggleAbsent={toggleAbsent} onRemoveCameo={removeCameo} />
-                </div>
-              </div>
+              <SortableRow key={entry.id} entry={entry} placing={i + 1} onToggleAbsent={toggleAbsent} onRemoveCameo={removeCameo} />
             ))}
           </div>
         </SortableContext>
@@ -178,27 +186,31 @@ export default function LogGamePage() {
 
       {absentEntries.length > 0 && (
         <div className="mt-2 space-y-2">
-          {absentEntries.map(entry => (
-            <div key={entry.id} className="ml-6">
-              <SortableRow entry={entry} onToggleAbsent={toggleAbsent} onRemoveCameo={removeCameo} />
-            </div>
+          {absentEntries.map((entry, i) => (
+            <SortableRow
+              key={entry.id}
+              entry={entry}
+              placing={sortableEntries.length + i + 1}
+              onToggleAbsent={toggleAbsent}
+              onRemoveCameo={removeCameo}
+            />
           ))}
         </div>
       )}
 
-      <div className="flex gap-2 mt-4">
+      <div className="card mt-4 flex gap-2 !border-dashed !bg-transparent">
         <input value={cameoInput} onChange={e => setCameoInput(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && addCameo()}
-          placeholder="Add guest player…"
-          className="flex-1 bg-[#26262e] rounded-xl px-4 py-3 text-white text-sm outline-none" />
+          placeholder="Guest name..."
+          className="control flex-1" />
         <button onClick={addCameo} disabled={!cameoInput.trim()}
-          className="p-3 rounded-xl bg-[#E8C96A]/15 text-[#E8C96A] disabled:opacity-40">
-          <Plus size={20} />
+          className="primary-button !min-h-[46px] !w-auto !px-4 disabled:opacity-40">
+          Add
         </button>
       </div>
 
-      <GlassCard className="mt-4 p-4">
-        <p className="text-xs text-[#8E8E93] uppercase tracking-wider mb-3">Points Preview</p>
+      <GlassCard className="mt-4">
+        <p className="section-label mb-3">Points Preview</p>
         <div className="space-y-2">
           {placements.map(p => (
             <div key={p.player} className="flex items-center justify-between">
@@ -208,7 +220,7 @@ export default function LogGamePage() {
                 {p.isCameo && <span className="text-xs text-[#E8C96A]">(guest)</span>}
               </div>
               <span className={`font-mono font-bold text-sm ${p.isAbsent ? 'text-[#8E8E93]' : 'text-white'}`}>
-                {p.isCameo ? 'Guest' : formatPoints(scores[p.player] ?? 0)}
+                {p.isCameo ? 'Guest' : `${formatPoints(scores[p.player] ?? 0)} pts`}
               </span>
             </div>
           ))}
@@ -219,9 +231,17 @@ export default function LogGamePage() {
       </GlassCard>
 
       <button onClick={handleSave} disabled={!canSubmit}
-        className="w-full mt-4 py-4 rounded-2xl bg-[#E8C96A] text-black font-bold text-base disabled:opacity-40 flex items-center justify-center gap-2">
-        {saving ? 'Saving…' : saved ? <><Check size={18} /> Saved!</> : 'Save Game'}
+        className="primary-button mt-4 flex items-center justify-center gap-2 disabled:opacity-40">
+        {saving ? 'Saving…' : 'Save Game'}
       </button>
+      <AnimatePresence>
+        {saved && (
+          <motion.div className="toast" initial={{ y: 24, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 24, opacity: 0 }}>
+            Game saved ✓
+          </motion.div>
+        )}
+      </AnimatePresence>
+      </div>
     </div>
   );
 }

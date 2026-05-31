@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, onSnapshot, query, where, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 
 export function useGames(seasonId) {
@@ -10,11 +10,13 @@ export function useGames(seasonId) {
     if (!seasonId) { setGames([]); setLoading(false); return; }
     const q = query(
       collection(db, 'games'),
-      where('seasonId', '==', seasonId),
-      orderBy('date', 'desc')
+      where('seasonId', '==', seasonId)
     );
     const unsub = onSnapshot(q, snap => {
-      setGames(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const sortedGames = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (b.date?.seconds || 0) - (a.date?.seconds || 0));
+      setGames(sortedGames);
       setLoading(false);
     }, () => setLoading(false));
     return unsub;

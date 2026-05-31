@@ -8,10 +8,13 @@ import { useGames } from '../hooks/useGames';
 import { calculateGamePoints, formatPoints } from '../utils/scoring';
 import GlassCard from '../components/GlassCard';
 import EmptyState from '../components/EmptyState';
+import Sheet from '../components/Sheet';
 
 function GameRow({ game, season }) {
   const [expanded, setExpanded] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deleteRevealed, setDeleteRevealed] = useState(false);
+  const [touchStartX, setTouchStartX] = useState(null);
 
   const scores = calculateGamePoints(game.placements || [], season?.cameoWeight ?? 0.5);
   const topPlayers = (game.placements || [])
@@ -27,24 +30,55 @@ function GameRow({ game, season }) {
   const handleDelete = async () => {
     await deleteDoc(doc(db, 'games', game.id));
     setDeleteConfirm(false);
+    setDeleteRevealed(false);
+  };
+
+  const handleTouchMove = (event) => {
+    if (touchStartX === null) return;
+    const delta = event.touches[0].clientX - touchStartX;
+    if (delta < -48) setDeleteRevealed(true);
+    if (delta > 32) setDeleteRevealed(false);
   };
 
   return (
-    <GlassCard className="overflow-hidden">
-      <button onClick={() => setExpanded(!expanded)} className="w-full p-4 text-left"
-        style={{ WebkitTapHighlightColor: 'transparent' }}>
-        <div className="flex items-center justify-between">
-          <div>
+    <div className="relative overflow-hidden rounded-2xl">
+      <button
+        className={`absolute bottom-0 right-0 top-0 z-0 w-24 bg-[#E07B6A] text-sm font-bold text-white transition-opacity ${deleteRevealed ? 'opacity-100' : 'opacity-0'}`}
+        onClick={() => setDeleteConfirm(true)}
+        tabIndex={deleteRevealed ? 0 : -1}
+      >
+        Delete
+      </button>
+      <GlassCard className={`relative z-10 overflow-hidden transition-transform duration-200 ${deleteRevealed ? '-translate-x-24' : ''}`}>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => setExpanded(!expanded)}
+        onKeyDown={event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            setExpanded(value => !value);
+          }
+        }}
+        onTouchStart={event => setTouchStartX(event.touches[0].clientX)}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={() => setTouchStartX(null)}
+        className="w-full p-0 text-left"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
             <p className="font-semibold text-white">{dateStr}</p>
-            <p className="text-sm text-[#8E8E93]">{topPlayers.join(' · ')} · {game.placements?.length || 0} players</p>
+            <p className="text-sm text-[#8E8E93] truncate">
+              {topPlayers.length ? topPlayers.map((p, i) => `${['🥇', '🥈', '🥉'][i] || ''} ${p}`).join('  ') : 'No placements'} · {(game.placements || []).length} players
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <button onClick={e => { e.stopPropagation(); setDeleteConfirm(true); }}
-              className="p-2 rounded-lg bg-[#E07B6A]/15 text-[#E07B6A]"><Trash2 size={15} /></button>
+              className="icon-button !min-h-9 !min-w-9 rounded-xl bg-[#E07B6A]/15 text-[#E07B6A]" aria-label="Delete game"><Trash2 size={15} /></button>
             {expanded ? <ChevronUp size={18} className="text-[#8E8E93]" /> : <ChevronDown size={18} className="text-[#8E8E93]" />}
           </div>
         </div>
-      </button>
+      </div>
 
       <AnimatePresence>
         {expanded && (
@@ -58,8 +92,8 @@ function GameRow({ game, season }) {
                     <span className={`text-sm ${p.isCameo ? 'text-[#E8C96A]' : p.isAbsent ? 'text-[#8E8E93]' : 'text-white'}`}>
                       {p.player}
                     </span>
-                    {p.isCameo && <span className="text-[10px] bg-[#E8C96A]/15 text-[#E8C96A] px-1.5 py-0.5 rounded">Guest</span>}
-                    {p.isAbsent && <span className="text-[10px] bg-white/8 text-[#8E8E93] px-1.5 py-0.5 rounded">Absent</span>}
+                    {p.isCameo && <span className="text-xs bg-[#E8C96A]/15 text-[#E8C96A] px-1.5 py-0.5 rounded">Guest</span>}
+                    {p.isAbsent && <span className="text-xs bg-white/8 text-[#8E8E93] px-1.5 py-0.5 rounded">Absent</span>}
                   </div>
                   <span className="font-mono text-sm font-bold">
                     {p.isCameo ? '—' : `${formatPoints(scores[p.player] ?? 0)} pts`}
@@ -71,16 +105,14 @@ function GameRow({ game, season }) {
         )}
       </AnimatePresence>
 
-      {deleteConfirm && (
-        <div className="border-t border-white/8 p-4 bg-[#E07B6A]/8">
-          <p className="text-sm text-white mb-3">Delete this game?</p>
-          <div className="flex gap-2">
-            <button onClick={() => setDeleteConfirm(false)} className="flex-1 py-2 rounded-xl bg-white/8 text-sm">Cancel</button>
-            <button onClick={handleDelete} className="flex-1 py-2 rounded-xl bg-[#E07B6A] text-white font-bold text-sm">Delete</button>
-          </div>
+      </GlassCard>
+      <Sheet open={deleteConfirm} title="Delete game?" subtitle="This removes the game from history and recalculates standings." onClose={() => setDeleteConfirm(false)}>
+        <div className="space-y-3">
+          <button onClick={handleDelete} className="destructive-button">Delete Game</button>
+          <button onClick={() => setDeleteConfirm(false)} className="secondary-button">Cancel</button>
         </div>
-      )}
-    </GlassCard>
+      </Sheet>
+    </div>
   );
 }
 
@@ -88,10 +120,21 @@ export default function HistoryPage() {
   const { activeSeason: season } = useActiveSeason();
   const { games, loading } = useGames(season?.id);
 
-  if (loading) return <div className="flex items-center justify-center h-64"><div className="text-[#8E8E93]">Loading…</div></div>;
+  if (loading) return (
+    <div className="page">
+      <header className="app-header">
+        <div className="app-header-inner">
+          <h1 className="page-title">History</h1>
+        </div>
+      </header>
+      <div className="page-inner flex min-h-[60dvh] items-center justify-center">
+        <div className="secondary-text">Loading history…</div>
+      </div>
+    </div>
+  );
 
   const grouped = {};
-  games.forEach(g => {
+  (games || []).forEach(g => {
     const d = g.date?.toDate ? g.date.toDate() : new Date();
     const key = d.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' });
     if (!grouped[key]) grouped[key] = [];
@@ -99,15 +142,20 @@ export default function HistoryPage() {
   });
 
   return (
-    <div className="px-4 pt-14 pb-4">
-      <h1 className="text-2xl font-bold mb-6">History</h1>
-      {games.length === 0 ? (
-        <EmptyState icon="🕐" title="No games yet" message="Log your first game to see history here." />
+    <div className="page">
+      <header className="app-header">
+        <div className="app-header-inner">
+          <h1 className="page-title">History</h1>
+        </div>
+      </header>
+      <div className="page-inner">
+      {(games || []).length === 0 ? (
+        <EmptyState icon="🕐" title="No games yet" message="Head to the Log tab to play your first game." />
       ) : (
         <div className="space-y-6">
           {Object.entries(grouped).map(([month, monthGames]) => (
             <div key={month}>
-              <p className="text-sm font-semibold text-[#8E8E93] uppercase tracking-wider mb-3">{month}</p>
+              <p className="section-label mb-3">{month}</p>
               <div className="space-y-2">
                 {monthGames.map(g => <GameRow key={g.id} game={g} season={season} />)}
               </div>
@@ -115,6 +163,7 @@ export default function HistoryPage() {
           ))}
         </div>
       )}
+      </div>
     </div>
   );
 }
