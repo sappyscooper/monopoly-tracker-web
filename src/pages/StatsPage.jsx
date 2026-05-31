@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { Info } from 'lucide-react';
-import { LineChart, Line, ResponsiveContainer } from 'recharts';
 import { useActiveSeason } from '../hooks/useActiveSeason';
 import { useGames } from '../hooks/useGames';
 import { calculateGamePoints, seasonLeaderboard, formatPoints } from '../utils/scoring';
@@ -10,6 +9,10 @@ import EmptyState from '../components/EmptyState';
 import Sheet from '../components/Sheet';
 
 const ACCENTS = ['#E8C96A', '#6EB5D4', '#E07B6A', '#d4a760', '#8EB5D4'];
+
+function formatOne(value) {
+  return Number(value || 0).toFixed(1);
+}
 
 function InfoModal({ title, explanation, onClose }) {
   return (
@@ -25,12 +28,11 @@ function StatCard({ title, explanation, children }) {
   return (
     <>
       <GlassCard>
-        <div className="flex items-center gap-2 mb-4">
-          <h3 className="card-title">{title}</h3>
-          <button onClick={() => setShowInfo(true)} className="grid min-h-8 min-w-8 place-items-center rounded-lg bg-white/5 text-[#8E8E93]" aria-label={`About ${title}`}>
+        <div className="stats-card-header">
+          <h3 className="stats-card-title">{title}</h3>
+          <button onClick={() => setShowInfo(true)} className="info-button" aria-label={`About ${title}`}>
             <Info size={14} />
           </button>
-          <span className="ml-auto text-sm text-[#8E8E93]">•</span>
         </div>
         {children}
       </GlassCard>
@@ -41,10 +43,35 @@ function StatCard({ title, explanation, children }) {
   );
 }
 
+function StatsInlineEmptyState({ children }) {
+  return <div className="stats-inline-empty">{children}</div>;
+}
+
+function MiniSparkline({ values, color }) {
+  const safeValues = values?.length ? values : [0];
+  const max = Math.max(...safeValues, 1);
+  const min = Math.min(...safeValues, 0);
+  const range = Math.max(max - min, 1);
+  const points = safeValues.map((value, index) => {
+    const x = safeValues.length === 1 ? 52 : (index / (safeValues.length - 1)) * 52 + 2;
+    const y = 22 - ((value - min) / range) * 18;
+    return `${x},${y}`;
+  }).join(' ');
+
+  return (
+    <svg className="sparkline-box" viewBox="0 0 56 24" aria-hidden="true">
+      <polyline points={points} fill="none" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={points.split(' ').at(-1)?.split(',')[0] || 52} cy={points.split(' ').at(-1)?.split(',')[1] || 12} r="2.4" fill={color} />
+    </svg>
+  );
+}
+
 function computeStats(season, games) {
   if (!season || !games.length) return null;
   const players = season.regularPlayers || [];
   const cameoWeight = season.cameoWeight ?? 0.5;
+  const sortedGamesDesc = [...games].sort((a, b) => (b.date?.seconds || 0) - (a.date?.seconds || 0));
+  const sortedGamesAsc = [...games].sort((a, b) => (a.date?.seconds || 0) - (b.date?.seconds || 0));
 
   const leaderboard = seasonLeaderboard(games, players, cameoWeight);
   const totalGames = games.length;
@@ -54,145 +81,165 @@ function computeStats(season, games) {
   const daysLeft = Math.max(0, Math.ceil((endDate - now) / (1000 * 60 * 60 * 24)));
   const remainingGames = Math.max(0, Math.ceil(daysLeft / 7));
 
-  const gamesPlayedByPlayer = {};
-  players.forEach(p => gamesPlayedByPlayer[p] = 0);
-  games.forEach(g => {
-    g.placements?.forEach(p => {
-      if (!p.isCameo && gamesPlayedByPlayer[p.player] !== undefined) gamesPlayedByPlayer[p.player]++;
+  const gamesPlayedByPlayer = Object.fromEntries(players.map(player => [player, 0]));
+  games.forEach(game => {
+    game.placements?.forEach(placement => {
+      if (!placement.isCameo && gamesPlayedByPlayer[placement.player] !== undefined) {
+        gamesPlayedByPlayer[placement.player]++;
+      }
     });
   });
 
-  const leaderboardWithAvg = leaderboard.map((row, i) => {
-    const gp = gamesPlayedByPlayer[row.player] || 0;
-    const avg = gp > 0 ? row.points / gp : 0;
-    const recentGames = [...games].sort((a, b) => (b.date?.seconds || 0) - (a.date?.seconds || 0)).slice(0, 5);
-    const sparkline = recentGames.reverse().map(g => {
-      const pts = calculateGamePoints(g.placements || [], cameoWeight);
-      return pts[row.player] ?? 0;
-    });
-    return { ...row, gamesPlayed: gp, avg, sparkline, accent: ACCENTS[i % ACCENTS.length] };
+  const leaderboardWithAvg = leaderboard.map((row, index) => {
+    const gamesPlayed = gamesPlayedByPlayer[row.player] || 0;
+    const avg = gamesPlayed > 0 ? row.points / gamesPlayed : 0;
+    const recentGames = sortedGamesDesc.slice(0, 5).reverse();
+    const sparkline = recentGames.map(game => calculateGamePoints(game.placements || [], cameoWeight)[row.player] ?? 0);
+    return { ...row, gamesPlayed, avg, sparkline, accent: ACCENTS[index % ACCENTS.length] };
   });
 
-  // Biggest rivalry
-  let rivalry = { pair: '—', gap: Infinity };
+  let rivalry = { pair: 'Not enough data', gap: 0 };
+  let rivalryGap = Infinity;
   for (let i = 0; i < players.length; i++) {
     for (let j = i + 1; j < players.length; j++) {
-      const diffs = games.flatMap(g => {
-        const pA = g.placements?.find(p => p.player === players[i] && !p.isCameo);
-        const pB = g.placements?.find(p => p.player === players[j] && !p.isCameo);
-        if (!pA || !pB) return [];
-        return [Math.abs(pA.placing - pB.placing)];
+      const diffs = games.flatMap(game => {
+        const first = game.placements?.find(placement => placement.player === players[i] && !placement.isCameo);
+        const second = game.placements?.find(placement => placement.player === players[j] && !placement.isCameo);
+        if (!first || !second) return [];
+        return [Math.abs(first.placing - second.placing)];
       });
       if (!diffs.length) continue;
-      const avg = diffs.reduce((a, b) => a + b, 0) / diffs.length;
-      if (avg < rivalry.gap) rivalry = { pair: `${players[i]} vs ${players[j]}`, gap: avg };
+      const avg = diffs.reduce((total, value) => total + value, 0) / diffs.length;
+      if (avg < rivalryGap) {
+        rivalryGap = avg;
+        rivalry = { pair: `${players[i]} vs ${players[j]}`, gap: avg };
+      }
     }
   }
-  if (rivalry.gap === Infinity) rivalry = { pair: '—', gap: 0 };
 
-  // Podium counts
-  const podiumCounts = {};
-  players.forEach(p => podiumCounts[p] = { first: 0, second: 0, third: 0, last: 0 });
-  games.forEach(g => {
-    const regulars = (g.placements || []).filter(p => !p.isCameo).sort((a, b) => a.placing - b.placing);
+  const podiumCounts = Object.fromEntries(players.map(player => [player, { first: 0, second: 0, third: 0, last: 0 }]));
+  games.forEach(game => {
+    const regulars = (game.placements || []).filter(placement => !placement.isCameo).sort((a, b) => a.placing - b.placing);
     const lastPlacing = regulars[regulars.length - 1]?.placing;
-    regulars.forEach(p => {
-      if (!podiumCounts[p.player]) return;
-      if (p.placing === 1) podiumCounts[p.player].first++;
-      if (p.placing === 2) podiumCounts[p.player].second++;
-      if (p.placing === 3) podiumCounts[p.player].third++;
-      if (p.placing === lastPlacing) podiumCounts[p.player].last++;
+    regulars.forEach(placement => {
+      if (!podiumCounts[placement.player]) return;
+      if (placement.placing === 1) podiumCounts[placement.player].first++;
+      if (placement.placing === 2) podiumCounts[placement.player].second++;
+      if (placement.placing === 3) podiumCounts[placement.player].third++;
+      if (placement.placing === lastPlacing) podiumCounts[placement.player].last++;
     });
   });
 
-  const mostFirsts = players.reduce((best, p) => (!best || podiumCounts[p].first > podiumCounts[best].first) ? p : best, null);
-  const mostLasts = players.reduce((best, p) => (!best || podiumCounts[p].last > podiumCounts[best].last) ? p : best, null);
+  const mostFirsts = players.reduce((best, player) => (!best || podiumCounts[player].first > podiumCounts[best].first) ? player : best, null);
+  const mostLasts = players.reduce((best, player) => (!best || podiumCounts[player].last > podiumCounts[best].last) ? player : best, null);
 
-  // Head to head
   const headToHead = {};
   players.forEach(row => {
     headToHead[row] = {};
     players.forEach(col => {
-      if (row === col) { headToHead[row][col] = null; return; }
-      const vals = games.flatMap(g => {
-        const rP = g.placements?.find(p => p.player === row && !p.isCameo);
-        const cP = g.placements?.find(p => p.player === col && !p.isCameo);
-        if (!rP || !cP) return [];
-        return [rP.placing];
+      if (row === col) {
+        headToHead[row][col] = null;
+        return;
+      }
+      const vals = games.flatMap(game => {
+        const rowPlacement = game.placements?.find(placement => placement.player === row && !placement.isCameo);
+        const colPlacement = game.placements?.find(placement => placement.player === col && !placement.isCameo);
+        if (!rowPlacement || !colPlacement) return [];
+        return [rowPlacement.placing];
       });
-      headToHead[row][col] = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+      headToHead[row][col] = vals.length ? vals.reduce((total, value) => total + value, 0) / vals.length : null;
     });
   });
 
-  // Cameo stats
-  const cameoPlacements = games.flatMap(g => (g.placements || []).filter(p => p.isCameo));
+  const cameoPlacements = games.flatMap(game => (game.placements || []).filter(placement => placement.isCameo));
   const cameoByPlayer = {};
-  cameoPlacements.forEach(p => {
-    if (!cameoByPlayer[p.player]) cameoByPlayer[p.player] = [];
-    cameoByPlayer[p.player].push(p.placing);
+  cameoPlacements.forEach(placement => {
+    if (!cameoByPlayer[placement.player]) cameoByPlayer[placement.player] = [];
+    cameoByPlayer[placement.player].push(placement.placing);
   });
   const cameoRows = Object.entries(cameoByPlayer).map(([name, placings]) => ({
-    name, games: placings.length, avgPlacing: placings.reduce((a, b) => a + b, 0) / placings.length
+    name,
+    games: placings.length,
+    avgPlacing: placings.reduce((total, value) => total + value, 0) / placings.length,
   })).sort((a, b) => b.games - a.games);
 
-  const cameoGames = games.filter(g => g.placements?.some(p => p.isCameo));
-  const regularGames = games.filter(g => !g.placements?.some(p => p.isCameo));
-  const avgScore = (gs) => {
-    const scores = gs.flatMap(g => Object.values(calculateGamePoints(g.placements || [], cameoWeight)));
-    return scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+  const cameoGames = games.filter(game => game.placements?.some(placement => placement.isCameo));
+  const regularGames = games.filter(game => !game.placements?.some(placement => placement.isCameo));
+  const avgScore = (gameSet) => {
+    const scores = gameSet.flatMap(game => Object.values(calculateGamePoints(game.placements || [], cameoWeight)));
+    return scores.length ? scores.reduce((total, value) => total + value, 0) / scores.length : 0;
   };
   const cameoDelta = cameoGames.length > 0 && regularGames.length > 0
     ? avgScore(cameoGames) - avgScore(regularGames)
     : null;
 
-  // Recent form
   const recentForm = {};
   const streaks = {};
-  players.forEach(p => {
-    const recents = [...games].sort((a, b) => (b.date?.seconds || 0) - (a.date?.seconds || 0))
-      .slice(0, 5).map(g => g.placements?.find(pl => pl.player === p && !pl.isCameo)?.placing ?? null);
-    recentForm[p] = [...recents].reverse();
+  players.forEach(player => {
+    const recents = sortedGamesDesc.slice(0, 5).map(game => (
+      game.placements?.find(placement => placement.player === player && !placement.isCameo)?.placing ?? null
+    ));
+    recentForm[player] = [...recents].reverse();
 
     let hotCount = 0;
     for (const placing of recents) {
-      if (placing === null) break;
-      if (placing <= 2) hotCount++;
-      else break;
+      if (placing === null || placing > 2) break;
+      hotCount++;
     }
-    streaks[p] = hotCount >= 2 ? { type: 'hot', count: hotCount } : { type: null };
+    streaks[player] = hotCount >= 2 ? { type: 'hot', count: hotCount } : { type: null };
   });
 
-  // Projection
   const totalEstimated = totalGames + remainingGames;
   const projectedPoints = {};
   leaderboardWithAvg.forEach(row => {
-    projectedPoints[row.player] = { current: row.points, projected: row.avg * totalEstimated, accent: row.accent };
+    projectedPoints[row.player] = {
+      current: row.points,
+      projected: row.avg * totalEstimated,
+      accent: row.accent,
+    };
   });
-  const projSorted = Object.entries(projectedPoints).sort((a, b) => b[1].projected - a[1].projected);
+  const projectedRows = Object.entries(projectedPoints)
+    .map(([player, data]) => ({ player, ...data }))
+    .sort((a, b) => b.projected - a.projected);
   const forecastHeadline = totalGames < 2 ? 'Ask again after a few more games'
-    : projSorted.length >= 2 && projSorted[0][1].projected - projSorted[1][1].projected > 5
-      ? `${projSorted[0][0]} is on track to win 🏆`
-      : "It's too close to call 👀";
+    : projectedRows.length >= 2 && projectedRows[0].projected - projectedRows[1].projected > 5
+      ? `${projectedRows[0].player} is on track to win 🏆`
+      : "It's too close to call";
 
   const dominant = leaderboardWithAvg[0];
 
   return {
-    totalGames, remainingGames, leaderboard: leaderboardWithAvg,
-    mostDominantPlayer: dominant?.player || '—', mostDominantAvg: dominant?.avg || 0,
-    biggestRivalry: rivalry.pair, biggestRivalryGap: rivalry.gap,
-    podiumCounts, mostFirsts, mostLasts,
-    headToHead, players,
-    totalCameoAppearances: cameoPlacements.length, cameoRows, cameoDelta,
-    cameoGamesCount: cameoGames.length, regularGamesCount: regularGames.length,
-    recentForm, streaks,
-    projectedPoints, forecastHeadline,
+    totalGames,
+    remainingGames,
+    leaderboard: leaderboardWithAvg,
+    mostDominantPlayer: dominant?.player || 'Not enough data',
+    mostDominantAvg: dominant?.avg || 0,
+    biggestRivalry: rivalry.pair,
+    biggestRivalryGap: rivalry.gap,
+    podiumCounts,
+    mostFirsts,
+    mostLasts,
+    headToHead,
+    players,
+    totalCameoAppearances: cameoPlacements.length,
+    cameoRows,
+    cameoDelta,
+    cameoGamesCount: cameoGames.length,
+    regularGamesCount: regularGames.length,
+    recentForm,
+    streaks,
+    projectedRows,
+    forecastHeadline,
+    projectedWinner: projectedRows[0]?.player,
+    projectedLoser: projectedRows.at(-1)?.player,
+    sortedGamesAsc,
   };
 }
 
 export default function StatsPage() {
   const { activeSeason: season, loading: seasonsLoading } = useActiveSeason();
   const { games, loading: gamesLoading } = useGames(season?.id);
-  const stats = useMemo(() => computeStats(season, games), [season, games]);
+  const stats = useMemo(() => computeStats(season, games || []), [season, games]);
 
   if (seasonsLoading || gamesLoading) return (
     <div className="page">
@@ -202,7 +249,7 @@ export default function StatsPage() {
         </div>
       </header>
       <div className="page-inner flex min-h-[60dvh] items-center justify-center">
-        <div className="secondary-text">Loading stats…</div>
+        <div className="secondary-text">Loading stats...</div>
       </div>
     </div>
   );
@@ -215,10 +262,11 @@ export default function StatsPage() {
         </div>
       </header>
       <div className="page-inner">
-      <EmptyState icon="📊" title="No active season" message="Start a season to see your stats unfold." />
+        <EmptyState icon="📊" title="No active season" message="Start a season to see your stats unfold." />
       </div>
     </div>
   );
+
   if (!stats) return (
     <div className="page">
       <header className="app-header">
@@ -230,12 +278,14 @@ export default function StatsPage() {
         </div>
       </header>
       <div className="page-inner">
-      <div className="mt-8"><EmptyState icon="🎲" title="No games yet" message="Log your first game to see stats." /></div>
+        <div className="mt-8"><EmptyState icon="🎲" title="No games yet" message="Log your first game to see stats." /></div>
       </div>
     </div>
   );
 
-  const { leaderboard, players, headToHead, recentForm, streaks, projectedPoints, cameoRows } = stats;
+  const { leaderboard, players, headToHead, recentForm, streaks, cameoRows, projectedRows } = stats;
+  const maxAvg = Math.max(...leaderboard.map(row => row.avg), 1);
+  const maxProjected = Math.max(...projectedRows.map(row => row.projected), 1);
 
   return (
     <div className="page">
@@ -248,256 +298,224 @@ export default function StatsPage() {
         </div>
       </header>
 
-      <div className="page-inner space-y-4">
+      <div className="page-inner stats-stack">
+        <StatCard title="Season at a Glance" explanation="A quick overview of where your season stands. Total Games counts every game logged. Est. Remaining is a rough projection based on end date. Highest Avg shows who earns the most points per game. Closest Rivals names the two players with the smallest average placing gap.">
+          <div className="snapshot-grid">
+            {[
+              { value: stats.totalGames, sub: 'games played so far' },
+              { value: stats.remainingGames, sub: 'games left this season' },
+              { value: stats.mostDominantPlayer, sub: `${formatOne(stats.mostDominantAvg)} pts/game avg` },
+              { value: stats.biggestRivalry, sub: `closest rivals, avg ${formatOne(stats.biggestRivalryGap)} gap` },
+            ].map(tile => (
+              <div key={`${tile.value}-${tile.sub}`} className="snapshot-tile">
+                <p className="snapshot-value">{tile.value}</p>
+                <p className="snapshot-subtext">{tile.sub}</p>
+              </div>
+            ))}
+          </div>
+        </StatCard>
 
-      {/* Card 1: Season at a Glance */}
-      <StatCard title="Season at a Glance" explanation="A quick overview of where your season stands. Total Games counts every game logged. Est. Remaining is a rough projection based on end date. Highest Avg shows who earns the most points per game. Closest Rivals names the two players with the smallest average placing gap.">
-        <div className="grid grid-cols-2 gap-2">
-          {[
-            { value: stats.totalGames, sub: 'games played so far' },
-            { value: stats.remainingGames, sub: 'games left this season' },
-            { value: stats.mostDominantPlayer, sub: `${formatPoints(stats.mostDominantAvg)} pts/game avg`, extra: 'highest avg pts/game' },
-            { value: stats.biggestRivalry, sub: 'most evenly matched', extra: `avg ${stats.biggestRivalryGap.toFixed(1)} placing gap` },
-          ].map((tile, i) => (
-            <div key={i} className="bg-[#26262e] rounded-xl p-3">
-              <p className="font-bold text-white text-base leading-tight truncate">{tile.value}</p>
-              <p className="text-xs text-[#8E8E93] mt-1">{tile.sub}</p>
-              {tile.extra && <p className="text-xs text-[#8E8E93] italic mt-0.5">{tile.extra}</p>}
-            </div>
-          ))}
-        </div>
-      </StatCard>
-
-      {/* Card 2: Who's Winning Right Now */}
-      <StatCard title="Who's Winning Right Now" explanation="Your current standings with sparklines showing each player's last 5 games. Trend badges show recent momentum.">
-        <div className="space-y-3">
-          {leaderboard.map((row, i) => {
-            const vals = row.sparkline;
-            const recent2 = vals.length >= 2 ? (vals.slice(-2).reduce((a, b) => a + b, 0) / 2) : 0;
-            const before2 = vals.length >= 4 ? (vals.slice(-4, -2).reduce((a, b) => a + b, 0) / 2) : null;
-            let badge = null;
-            if (before2 !== null && vals.length >= 3) {
-              if (recent2 > before2 + 0.5) badge = { label: '↑ Hot', color: '#6EB5D4', bg: '#6EB5D433' };
-              else if (recent2 < before2 - 0.5) badge = { label: '↓ Cold', color: '#E07B6A', bg: '#E07B6A33' };
-              else badge = { label: '→ Stable', color: '#8E8E93', bg: '#8E8E9333' };
-            }
-            return (
-              <div key={row.player} className="flex items-center gap-2">
-                <span className="w-5 text-xs font-bold font-mono" style={{ color: ACCENTS[i] }}>{i + 1}</span>
-                <span className="flex-1 text-sm font-semibold truncate">{row.player}</span>
-                <div className="h-7 w-16">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={row.sparkline.map((v, j) => ({ v, j }))}>
-                      <Line type="monotone" dataKey="v" stroke={row.accent} strokeWidth={2} dot={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
+        <StatCard title="Who's Winning Right Now" explanation="Current standings with sparklines showing each player's latest scoring trend. Trend badges appear once there are enough games to compare momentum.">
+          {leaderboard.length === 0 ? (
+            <StatsInlineEmptyState>Log a game to generate standings.</StatsInlineEmptyState>
+          ) : (
+            <>
+              <div>
+                {leaderboard.map((row, index) => {
+                  const values = row.sparkline || [];
+                  const recent2 = values.length >= 2 ? (values.slice(-2).reduce((a, b) => a + b, 0) / 2) : 0;
+                  const before2 = values.length >= 4 ? (values.slice(-4, -2).reduce((a, b) => a + b, 0) / 2) : null;
+                  let badge = null;
+                  if (before2 !== null && values.length >= 4) {
+                    if (recent2 > before2 + 0.5) badge = { label: 'Hot', color: '#6EB5D4', bg: 'rgba(110,181,212,0.18)' };
+                    else if (recent2 < before2 - 0.5) badge = { label: 'Cold', color: '#E07B6A', bg: 'rgba(224,123,106,0.18)' };
+                    else badge = { label: 'Stable', color: '#8E8E93', bg: 'rgba(255,255,255,0.08)' };
+                  }
+                  return (
+                    <div key={row.player} className="leader-row">
+                      <span className="rank-badge" style={{ color: row.accent }}>{index + 1}</span>
+                      <span className="leader-name">{row.player}</span>
+                      <MiniSparkline values={values} color={row.accent} />
+                      {badge && <span className="trend-badge" style={{ color: badge.color, background: badge.bg }}>{badge.label}</span>}
+                      <span className="leader-points">{formatPoints(row.points)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              {leaderboard.length >= 2 && (
+                <div className="context-callout">
+                  {leaderboard[0].points - leaderboard[1].points < 3
+                    ? `${leaderboard[0].player} and ${leaderboard[1].player} are neck and neck`
+                    : `${leaderboard[0].player} leads with ${formatPoints(leaderboard[0].points)} pts`}
                 </div>
-                {badge && (
-                  <span className="text-xs font-semibold px-1.5 py-0.5 rounded-full"
-                    style={{ color: badge.color, background: badge.bg }}>{badge.label}</span>
-                )}
-                <span className="font-mono font-bold text-sm w-10 text-right">{formatPoints(row.points)}</span>
-              </div>
-            );
-          })}
-          {leaderboard.length >= 2 && (
-            <p className="text-xs text-[#8E8E93] pt-1 border-t border-white/8">
-              {leaderboard[0].points - leaderboard[1].points < 3
-                ? `${leaderboard[0].player} and ${leaderboard[1].player} are neck and neck`
-                : `${leaderboard[0].player} leads with ${formatPoints(leaderboard[0].points)} pts`}
-            </p>
+              )}
+            </>
           )}
-        </div>
-      </StatCard>
+        </StatCard>
 
-      {/* Card 3: Consistency Score */}
-      <StatCard title="Consistency Score" explanation="The average number of points each player earns per game played. Higher is better — this shows who consistently performs well, not just who's played the most games.">
-        <p className="text-xs text-[#8E8E93] mb-3">higher = more points every game, not just sometimes</p>
-        <div className="space-y-2">
-          {[...leaderboard].sort((a, b) => b.avg - a.avg).map((row, i, arr) => (
-            <div key={row.player} className="flex items-center gap-2">
-              <span className="text-sm font-semibold w-16 truncate">{row.player}</span>
-              <div className="flex-1 bg-[#26262e] rounded-full h-2 overflow-hidden">
-                <div className="h-full rounded-full transition-all duration-700"
-                  style={{ width: `${(row.avg / (arr[0]?.avg || 1)) * 100}%`, background: row.accent }} />
-              </div>
-              <span className="text-xs font-mono text-[#8E8E93] w-16 text-right">
-                {formatPoints(row.avg)} avg {i === 0 ? '👑' : i === arr.length - 1 ? '👻' : ''}
-              </span>
-            </div>
-          ))}
-        </div>
-      </StatCard>
-
-      {/* Card 4: Podium Record */}
-      <StatCard title="Podium Record" explanation="How many times each player has finished in the top 3. Gold = 1st, Silver = 2nd, Bronze = 3rd. The trophy goes to whoever has the most 1st places, the skull to whoever finishes last the most.">
-        <p className="text-xs text-[#8E8E93] mb-3">how often each player reaches the top 3</p>
-        <div className="space-y-2 mb-4">
-          {players.map(p => (
-            <div key={p} className="flex items-center gap-2">
-              <span className="text-sm font-semibold flex-1">{p}</span>
-              {[
-                { n: stats.podiumCounts[p]?.first || 0, color: '#E8C96A', label: '🥇' },
-                { n: stats.podiumCounts[p]?.second || 0, color: '#6EB5D4', label: '🥈' },
-                { n: stats.podiumCounts[p]?.third || 0, color: '#d4a760', label: '🥉' },
-              ].map(({ n, color, label }) => (
-                <span key={label} className="text-xs font-mono font-bold px-2 py-1 rounded-lg"
-                  style={{ background: `${color}22`, color: n > 0 ? color : '#8E8E93' }}>
-                  {label} {n}
-                </span>
-              ))}
-            </div>
-          ))}
-        </div>
-        <div className="grid grid-cols-2 gap-2 border-t border-white/8 pt-4">
-          <div className="bg-[#E8C96A]/8 rounded-xl p-3">
-            <p className="text-xs text-[#8E8E93] mb-1">Winning Machine 🏆</p>
-            <p className="font-bold text-[#E8C96A]">{stats.mostFirsts || '—'}</p>
-            <p className="text-xs text-[#8E8E93]">x{stats.podiumCounts[stats.mostFirsts]?.first || 0} wins</p>
-          </div>
-          <div className="bg-[#E07B6A]/8 rounded-xl p-3">
-            <p className="text-xs text-[#8E8E93] mb-1">Perma-Loser 💀</p>
-            <p className="font-bold text-[#E07B6A]">{stats.mostLasts || '—'}</p>
-            <p className="text-xs text-[#8E8E93]">x{stats.podiumCounts[stats.mostLasts]?.last || 0} lasts</p>
-          </div>
-        </div>
-      </StatCard>
-
-      {/* Card 5: Who Beats Who */}
-      <StatCard title="Who Beats Who" explanation="Your average finishing position in games where each opponent was also playing. Lower numbers are better — a 1.5 means you tend to finish near the top when that person is around.">
-        <p className="text-xs text-[#8E8E93] mb-2">lower number = you finish ahead of them</p>
-        <div className="flex gap-3 mb-3 text-xs">
-          {[
-            { color: '#6EB5D433', border: '#6EB5D4', label: 'You beat them' },
-            { color: '#E07B6A33', border: '#E07B6A', label: 'They beat you' },
-            { color: '#ffffff15', border: '#ffffff30', label: 'Even' },
-          ].map(({ color, border, label }) => (
-            <div key={label} className="flex items-center gap-1.5">
-              <div className="w-3 h-3 rounded" style={{ background: color, border: `1px solid ${border}` }} />
-              <span className="text-[#8E8E93]">{label}</span>
-            </div>
-          ))}
-        </div>
-        <div className="overflow-x-auto scrollbar-hide -mx-1 px-1">
-          <table className="text-xs">
-            <thead>
-              <tr>
-                <th className="sticky left-0 z-10 w-12 bg-[#1c1c22]" />
-                {players.map(p => <th key={p} className="w-9 text-center text-[#8E8E93] font-medium pb-1">{p.slice(0,4)}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {players.map(row => (
-                <tr key={row}>
-                  <td className="sticky left-0 z-10 bg-[#1c1c22] text-[#8E8E93] font-medium pr-2 py-0.5">{row.slice(0,4)}</td>
-                  {players.map(col => {
-                    const val = headToHead[row]?.[col];
-                    const bg = val === null ? 'transparent'
-                      : val < 2.5 ? '#6EB5D433'
-                      : val > 3.5 ? '#E07B6A33' : '#ffffff10';
-                    return (
-                      <td key={col} className="h-10 min-w-10 text-center rounded font-mono" style={{ background: bg }}>
-                        {val !== null ? val.toFixed(1) : '—'}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </StatCard>
-
-      {/* Card 6: Cameo Effect */}
-      {stats.totalCameoAppearances > 0 && (
-        <StatCard title="Cameo Effect" explanation="Tracks guest players who joined without being in the regular season. The delta shows whether cameo games result in higher or lower average points for regular players vs games without guests.">
-          <div className="rounded-xl p-3 mb-4"
-            style={{ background: stats.cameoDelta === null ? '#ffffff10'
-              : Math.abs(stats.cameoDelta) < 0.3 ? '#ffffff10'
-                : stats.cameoDelta > 0 ? '#6EB5D433' : '#E07B6A33' }}>
-            <p className="font-bold text-base">
-              {stats.cameoDelta === null ? 'Need a normal game baseline'
-                : Math.abs(stats.cameoDelta) < 0.3 ? 'Cameos are neutral'
-                  : stats.cameoDelta > 0 ? `Cameos help! +${formatPoints(stats.cameoDelta)} pts avg`
-                    : `Cameos hurt. ${formatPoints(stats.cameoDelta)} pts avg`}
-            </p>
-            <p className="text-xs text-[#8E8E93] mt-0.5">
-              {stats.cameoDelta === null
-                ? `${stats.cameoGamesCount} cameo game${stats.cameoGamesCount === 1 ? '' : 's'}, ${stats.regularGamesCount} normal games`
-                : 'vs. games without guests'}
-            </p>
-          </div>
+        <StatCard title="Consistency Score" explanation="Average points per game played. This shows who performs steadily, not just who has the highest total.">
           <div className="space-y-2">
-            {cameoRows.map(c => (
-              <div key={c.name} className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-[#E8C96A]">{c.name}</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-[#8E8E93]">{c.games} games</span>
-                  <span className="font-mono text-xs bg-[#E8C96A]/15 text-[#E8C96A] px-2 py-0.5 rounded-full">
-                    avg {c.avgPlacing.toFixed(1)}
-                  </span>
+            {[...leaderboard].sort((a, b) => b.avg - a.avg).map((row, index, arr) => (
+              <div key={row.player} className="bar-row">
+                <span className="bar-label">{row.player}</span>
+                <div className="bar-track">
+                  <div className="bar-fill" style={{ width: `${Math.max(0, (row.avg / maxAvg) * 100)}%`, background: row.accent }}>
+                    <span className="bar-value">
+                      {formatOne(row.avg)} {index === 0 ? '👑' : index === arr.length - 1 ? '👻' : ''}
+                    </span>
+                  </div>
                 </div>
               </div>
             ))}
           </div>
         </StatCard>
-      )}
 
-      {/* Card 7: Recent Form */}
-      <StatCard title="Recent Form" explanation="Your last 5 games at a glance. Gold = 1st, silver = 2nd, bronze = 3rd, dark = lower. Empty circles = game not played yet. Left to right: oldest to newest.">
-        <div className="space-y-3">
-          {players.map(p => {
-            const streak = streaks[p];
-            const placings = recentForm[p] || [];
-            return (
-              <div key={p} className="flex items-center gap-2">
-                <span className="text-sm font-semibold flex-1 truncate">{p}</span>
-                {streak?.type === 'hot' && (
-                <span className="text-xs font-semibold text-[#E8C96A]">🔥 {streak.count}-game streak</span>
-                )}
-                <div className="flex gap-1">
-                  {Array(5).fill(null).map((_, i) => {
-                    const placing = placings[i];
-                    const bg = placing === null || placing === undefined ? '#ffffff10'
-                      : placing === 1 ? '#E8C96A'
-                      : placing === 2 ? '#6EB5D4'
-                      : placing === 3 ? '#d4a760'
-                      : '#32323c';
-                    return (
-                      <div key={i} className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold font-mono"
-                        style={{ background: bg, color: placing === 1 ? '#000' : '#fff' }}>
-                        {placing !== null && placing !== undefined && placing > 3 ? placing : ''}
-                      </div>
-                    );
-                  })}
-                </div>
+        <StatCard title="Podium Record" explanation="How many times each player has finished first, second, or third. The highlight tiles call out the most wins and most last-place finishes.">
+          <div>
+            {players.map(player => (
+              <div key={player} className="podium-row">
+                <span className="podium-player">{player}</span>
+                <span className="podium-pill" style={{ color: '#E8C96A', background: 'rgba(232,201,106,0.12)' }}>🥇 {stats.podiumCounts[player]?.first || 0}</span>
+                <span className="podium-pill" style={{ color: '#C0C0C0', background: 'rgba(255,255,255,0.08)' }}>🥈 {stats.podiumCounts[player]?.second || 0}</span>
+                <span className="podium-pill" style={{ color: '#CD7F32', background: 'rgba(205,127,50,0.12)' }}>🥉 {stats.podiumCounts[player]?.third || 0}</span>
               </div>
-            );
-          })}
-        </div>
-      </StatCard>
-
-      {/* Card 8: End of Season Forecast */}
-      <StatCard title="End of Season Forecast" explanation="A rough forecast of where everyone will finish if current scoring rates continue. Takes each player's average points per game and multiplies by estimated total games. For fun — one bad game can change everything.">
-        <div className="rounded-xl p-3 bg-white/5 mb-4">
-          <p className="font-semibold text-white">{stats.forecastHeadline}</p>
-        </div>
-        <div className="space-y-3">
-          {Object.entries(projectedPoints).sort((a, b) => b[1].projected - a[1].projected).map(([player, data]) => (
-            <div key={player}>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-sm font-semibold">{player}</span>
-                <span className="text-xs font-mono text-[#8E8E93]">{formatPoints(data.current)} → {formatPoints(data.projected)}</span>
-              </div>
-              <div className="bg-[#26262e] rounded-full h-1.5 overflow-hidden">
-                <div className="h-full rounded-full transition-all duration-700"
-                  style={{ width: `${Math.min(100, (data.current / Math.max(data.projected, 1)) * 100)}%`, background: data.accent }} />
-              </div>
+            ))}
+          </div>
+          <div className="highlight-row mt-3">
+            <div className="highlight-tile">
+              <p className="text-xs text-[#8E8E93]">Winning Machine 🏆</p>
+              <p className="mt-1 truncate font-bold text-[#E8C96A]">{stats.mostFirsts || 'Not yet'}</p>
+              <p className="text-xs text-[#8E8E93]">x{stats.podiumCounts[stats.mostFirsts]?.first || 0} wins</p>
             </div>
-          ))}
-        </div>
-        <p className="text-xs text-[#8E8E93] mt-3">Projection based on current avg pts/game</p>
-      </StatCard>
+            <div className="highlight-tile">
+              <p className="text-xs text-[#8E8E93]">Perma-Loser 💀</p>
+              <p className="mt-1 truncate font-bold text-[#E07B6A]">{stats.mostLasts || 'Not yet'}</p>
+              <p className="text-xs text-[#8E8E93]">x{stats.podiumCounts[stats.mostLasts]?.last || 0} lasts</p>
+            </div>
+          </div>
+        </StatCard>
+
+        <StatCard title="Who Beats Who" explanation="Average finishing position in games where each opponent was also playing. Lower is better.">
+          {stats.totalGames < 2 ? (
+            <StatsInlineEmptyState>Head-to-head gets more useful after at least 2 games.</StatsInlineEmptyState>
+          ) : (
+            <>
+              <div className="matrix-legend">
+                <span><i className="legend-dot" style={{ background: '#6EB5D4' }} /> You beat them</span>
+                <span><i className="legend-dot" style={{ background: '#E07B6A' }} /> They beat you</span>
+                <span><i className="legend-dot" style={{ background: '#8E8E93' }} /> Even</span>
+              </div>
+              <div className="matrix-wrapper matrix">
+                <table>
+                  <thead>
+                    <tr>
+                      <th />
+                      {players.map(player => <th key={player}>{player.slice(0, 4)}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {players.map(row => (
+                      <tr key={row}>
+                        <td>{row.slice(0, 4)}</td>
+                        {players.map(col => {
+                          const value = headToHead[row]?.[col];
+                          const style = value === null ? { background: 'transparent', color: '#48484A' }
+                            : value < 2.5 ? { background: 'rgba(110,181,212,0.20)', color: '#6EB5D4' }
+                              : value > 3.5 ? { background: 'rgba(224,123,106,0.20)', color: '#E07B6A' }
+                                : { background: 'rgba(255,255,255,0.04)', color: '#8E8E93' };
+                          return <td key={col} style={style}>{value !== null ? value.toFixed(1) : '-'}</td>;
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </StatCard>
+
+        <StatCard title="Cameo Effect" explanation="Tracks guest players who joined without being in the regular season. The delta compares average regular-player scores in cameo games vs normal games.">
+          {stats.totalCameoAppearances === 0 ? (
+            <StatsInlineEmptyState>No cameo guests have joined this season yet.</StatsInlineEmptyState>
+          ) : (
+            <>
+              <div className={`cameo-delta-tile ${
+                stats.cameoDelta === null || Math.abs(stats.cameoDelta) < 0.3 ? 'cameo-delta-neutral'
+                  : stats.cameoDelta > 0 ? 'cameo-delta-positive' : 'cameo-delta-negative'
+              }`}>
+                <p className="cameo-delta-title">
+                  {stats.cameoDelta === null ? 'Need a normal game baseline'
+                    : Math.abs(stats.cameoDelta) < 0.3 ? 'Cameos are neutral'
+                      : stats.cameoDelta > 0 ? `+${formatOne(stats.cameoDelta)} pts avg`
+                        : `${formatOne(stats.cameoDelta)} pts avg`}
+                </p>
+                <p className="cameo-delta-subtext">
+                  {stats.cameoDelta === null
+                    ? `${stats.cameoGamesCount} cameo game${stats.cameoGamesCount === 1 ? '' : 's'}, ${stats.regularGamesCount} normal games`
+                    : 'vs. games without guests'}
+                </p>
+              </div>
+              <div>
+                {cameoRows.map(row => (
+                  <div key={row.name} className="guest-stat-row">
+                    <span className="flex-1 truncate font-semibold text-[#E8C96A]">{row.name}</span>
+                    <span className="text-sm text-[#8E8E93]">{row.games} games</span>
+                    <span className="number-text rounded-full bg-[#E8C96A]/15 px-2 py-1 text-xs text-[#E8C96A]">avg {formatOne(row.avgPlacing)}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </StatCard>
+
+        <StatCard title="Recent Form" explanation="The last 5 games at a glance. Gold is 1st, silver is 2nd, bronze is 3rd, dark circles are lower finishes, and empty circles mean not played yet.">
+          <div>
+            {players.map(player => {
+              const placings = recentForm[player] || [];
+              const streak = streaks[player];
+              return (
+                <div key={player} className="form-row">
+                  <span className="form-player-name">{player}</span>
+                  <span className="streak-badge">{streak?.type === 'hot' ? `🔥 ${streak.count}-game streak` : ''}</span>
+                  <div className="form-circles">
+                    {Array(5).fill(null).map((_, index) => {
+                      const placing = placings[index];
+                      const klass = placing === null || placing === undefined ? 'form-empty'
+                        : placing === 1 ? 'form-1st'
+                          : placing === 2 ? 'form-2nd'
+                            : placing === 3 ? 'form-3rd'
+                              : 'form-lower';
+                      return (
+                        <span key={index} className={`form-circle ${klass}`}>
+                          {placing && placing > 3 ? placing : ''}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </StatCard>
+
+        <StatCard title="End of Season Forecast" explanation="A rough forecast of final standings if current scoring rates continue. It multiplies each player's average points per game by estimated total games.">
+          <div className="forecast-headline !mt-0">{stats.forecastHeadline}</div>
+          <div className="mt-3 space-y-3">
+            {projectedRows.map(row => (
+              <div key={row.player} className="projection-row">
+                <span className="projection-name">{row.player}</span>
+                <div className="projection-bar">
+                  <div className="projection-fill" style={{ width: `${Math.max(3, (row.projected / maxProjected) * 100)}%`, background: row.accent }} />
+                </div>
+                <span className="projection-points">{formatPoints(row.current)} → {formatPoints(row.projected)} pts</span>
+                <span className="w-5 text-center text-sm">
+                  {row.player === stats.projectedWinner ? '🏆' : row.player === stats.projectedLoser ? '💀' : ''}
+                </span>
+              </div>
+            ))}
+          </div>
+          <p className="mt-3 text-xs text-[#8E8E93]">Projection based on current avg pts/game</p>
+        </StatCard>
       </div>
     </div>
   );

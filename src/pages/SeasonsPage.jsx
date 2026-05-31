@@ -1,6 +1,6 @@
-import { useState, useRef } from 'react';
+import { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, X } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { collection, addDoc, doc, updateDoc, serverTimestamp, writeBatch, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useSeasons } from '../hooks/useSeasons';
@@ -37,7 +37,7 @@ function SeasonCard({ season, onLongPress }) {
         <div className="mb-4 flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 className="card-title truncate">{season.name}</h2>
-            <p className="secondary-text mt-1">{fmt(season.startDate)} – {fmt(season.endDate)}</p>
+            <p className="secondary-text mt-1">{fmt(season.startDate)} - {fmt(season.endDate)}</p>
           </div>
           <StatusPill active={season.isActive} />
         </div>
@@ -61,26 +61,56 @@ function SeasonCard({ season, onLongPress }) {
 }
 
 function CreateSeasonModal({ onClose, onCreated }) {
-  const [name, setName] = useState('Semester 1 2026');
+  const [name, setName] = useState('');
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(
     new Date(Date.now() + 120 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   );
   const [players, setPlayers] = useState([...DEFAULT_PLAYERS]);
+  const [newPlayer, setNewPlayer] = useState('');
   const [cameoWeight, setCameoWeight] = useState(0.5);
   const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState({});
+  const addInputRef = useRef(null);
 
-  const handleCreate = async () => {
+  const normalizedPlayers = () => {
     const uniquePlayers = [];
     const seen = new Set();
-    players.map(p => p.trim()).filter(Boolean).forEach(player => {
+    players.map(player => player.trim()).filter(Boolean).forEach(player => {
       const key = player.toLowerCase();
       if (!seen.has(key)) {
         seen.add(key);
         uniquePlayers.push(player);
       }
     });
-    if (!name.trim() || uniquePlayers.length === 0) return;
+    return uniquePlayers;
+  };
+
+  const addPlayer = () => {
+    const player = newPlayer.trim();
+    if (!player || players.length >= 8) return;
+    if (players.some(existing => existing.toLowerCase() === player.toLowerCase())) {
+      setNewPlayer('');
+      return;
+    }
+    setPlayers(prev => [...prev, player]);
+    setNewPlayer('');
+    requestAnimationFrame(() => addInputRef.current?.focus());
+  };
+
+  const validate = () => {
+    const nextErrors = {};
+    const uniquePlayers = normalizedPlayers();
+    if (!name.trim()) nextErrors.name = 'Season name is required';
+    if (uniquePlayers.length < 2) nextErrors.players = 'Add at least 2 players';
+    if (new Date(endDate) <= new Date(startDate)) nextErrors.duration = 'End date must be after start date';
+    setErrors(nextErrors);
+    return { valid: Object.keys(nextErrors).length === 0, uniquePlayers };
+  };
+
+  const handleCreate = async () => {
+    const { valid, uniquePlayers } = validate();
+    if (!valid) return;
     setSaving(true);
     try {
       const snap = await getDocs(collection(db, 'seasons'));
@@ -99,67 +129,80 @@ function CreateSeasonModal({ onClose, onCreated }) {
         createdAt: serverTimestamp(),
       });
       onCreated();
-    } catch (e) { console.error(e); setSaving(false); }
+    } catch (e) {
+      console.error(e);
+      setSaving(false);
+    }
   };
 
   return (
-    <Sheet open title="Create Season" subtitle="Set up the group and cameo impact." onClose={onClose}>
-      <div className="space-y-4">
-          <div>
-            <label className="section-label mb-2 block">Season name</label>
-            <input value={name} onChange={e => setName(e.target.value)}
-              autoFocus
-              placeholder="e.g. Semester 1 2026"
+    <Sheet open title="New Season" onClose={onClose}>
+      <div className="form-stack">
+        <section>
+          <label className="form-section-label">Season Name</label>
+          <input value={name} onChange={e => { setName(e.target.value); setErrors(prev => ({ ...prev, name: undefined })); }}
+            autoFocus
+            placeholder="Semester 1 2026"
+            className="control" />
+          {errors.name && <p className="inline-error">{errors.name}</p>}
+        </section>
+
+        <section>
+          <label className="form-section-label">Duration</label>
+          <div className="grid grid-cols-2 gap-3">
+            <input aria-label="Start date" type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+              className="control" />
+            <input aria-label="End date" type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
               className="control" />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="section-label mb-2 block">Start</label>
-              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
-                className="control" />
-            </div>
-            <div>
-              <label className="section-label mb-2 block">End</label>
-              <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
-                className="control" />
-            </div>
-          </div>
-          <div>
-            <label className="section-label mb-2 block">Players</label>
-            <div className="space-y-2">
-              {players.map((p, i) => (
-                <div key={i} className="flex gap-2">
-                  <input value={p} onChange={e => setPlayers(prev => { const n=[...prev]; n[i]=e.target.value; return n; })}
-                    placeholder={`Player ${i + 1}`}
-                    className="control flex-1" />
-                  <button onClick={() => setPlayers(prev => prev.filter((_, j) => j !== i))}
-                    className="icon-button bg-[#E07B6A]/15 text-[#E07B6A]" aria-label={`Remove ${p || 'player'}`}><X size={17} /></button>
-                </div>
-              ))}
-              {players.length < 8 && (
-                <button onClick={() => setPlayers(prev => [...prev, ''])}
-                  className="secondary-button !min-h-11 flex items-center justify-center gap-2 !text-sm">
-                  <Plus size={16} /> Add Player
+          {errors.duration && <p className="inline-error">{errors.duration}</p>}
+        </section>
+
+        <section>
+          <label className="form-section-label">Players</label>
+          <div className="player-chip-wrap">
+            {players.map((player) => (
+              <div className="player-chip" key={player}>
+                <span>{player}</span>
+                <button type="button" className="remove" aria-label={`Remove ${player}`}
+                  onClick={() => setPlayers(prev => prev.filter(p => p !== player))}>
+                  ×
                 </button>
-              )}
+              </div>
+            ))}
+          </div>
+          {errors.players && <p className="inline-error">{errors.players}</p>}
+          {players.length < 8 && (
+            <div className="compact-add-row mt-3">
+              <input ref={addInputRef} value={newPlayer}
+                onChange={e => setNewPlayer(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && addPlayer()}
+                placeholder="Enter player name..."
+                className="control" />
+              <button type="button" onClick={addPlayer} disabled={!newPlayer.trim()}
+                className="small-pill-button disabled:opacity-50">Add</button>
             </div>
+          )}
+        </section>
+
+        <section>
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <span className="form-section-label !mb-0">Cameo Impact</span>
+            <span className="number-text text-sm font-bold text-[#E8C96A]">{cameoWeight.toFixed(1)}×</span>
           </div>
-          <div>
-            <label className="section-label mb-2 flex justify-between">
-              <span>Cameo Impact</span>
-              <span className="text-[#E8C96A]">{cameoWeight.toFixed(2)}×</span>
-            </label>
-            <input type="range" min="0" max="1" step="0.05" value={cameoWeight}
-              onChange={e => setCameoWeight(parseFloat(e.target.value))}
-              className="w-full accent-[#E8C96A]" />
-          </div>
-          <div className="space-y-3 pt-2">
-            <button onClick={handleCreate} disabled={saving || !name.trim()}
-              className="primary-button disabled:opacity-50">
-              {saving ? 'Creating…' : 'Create Season'}
-            </button>
-            <button onClick={onClose} className="secondary-button">Cancel</button>
-          </div>
+          <input type="range" min="0" max="1" step="0.05" value={cameoWeight}
+            onChange={e => setCameoWeight(parseFloat(e.target.value))}
+            className="w-full accent-[#E8C96A]" />
+          <p className="hint-text">Guests slightly affect scores</p>
+        </section>
+
+        <section className="space-y-3">
+          <button onClick={handleCreate} disabled={saving}
+            className="primary-button disabled:opacity-50">
+            {saving ? 'Creating...' : 'Create Season'}
+          </button>
+          <button onClick={onClose} className="secondary-button">Cancel</button>
+        </section>
       </div>
     </Sheet>
   );
@@ -194,7 +237,7 @@ function EndSeasonModal({ season, onClose, onConfirm }) {
         <div className="space-y-3">
           <button onClick={handleConfirm} disabled={confirming}
             className="destructive-button disabled:opacity-50">
-            {confirming ? 'Ending…' : 'End Season'}
+            {confirming ? 'Ending...' : 'End Season'}
           </button>
           <button onClick={onClose} className="secondary-button">Cancel</button>
         </div>
@@ -216,7 +259,7 @@ export default function SeasonsPage() {
   if (loading) return (
     <div className="page">
       <div className="page-inner flex min-h-[60dvh] items-center justify-center">
-        <div className="secondary-text">Loading seasons…</div>
+        <div className="secondary-text">Loading seasons...</div>
       </div>
     </div>
   );
@@ -226,38 +269,38 @@ export default function SeasonsPage() {
       <header className="app-header">
         <div className="app-header-inner">
           <h1 className="page-title">Seasons</h1>
-        <button onClick={() => setShowCreate(true)}
-          className="icon-button bg-[#E8C96A] text-[#0a0a0f]"
-          aria-label="Create Season">
-          <Plus size={22} />
-        </button>
+          <button onClick={() => setShowCreate(true)}
+            className="icon-button bg-[#E8C96A] text-[#0a0a0f]"
+            aria-label="Create Season">
+            <Plus size={22} />
+          </button>
         </div>
       </header>
 
       <div className="page-inner">
-      {(seasons || []).length === 0 ? (
-        <EmptyState icon="🏆" title="No seasons yet"
-          message="Create your first season to start tracking"
-          action={
-            <button onClick={() => setShowCreate(true)}
-              className="primary-button mt-2 max-w-[240px]">
-              Create Season
-            </button>
-          } />
-      ) : (
-        <div className="space-y-3">
-          {(seasons || []).map((s, i) => (
-            <motion.div key={s.id} transition={{ delay: i * 0.05 }}>
-              <SeasonCard season={s} onLongPress={setEndingSeason} />
-            </motion.div>
-          ))}
-        </div>
-      )}
+        {(seasons || []).length === 0 ? (
+          <EmptyState icon="🏆" title="No seasons yet"
+            message="Create your first season to start tracking"
+            action={
+              <button onClick={() => setShowCreate(true)}
+                className="primary-button mt-2 max-w-[240px]">
+                Create Season
+              </button>
+            } />
+        ) : (
+          <div className="space-y-3">
+            {(seasons || []).map((s, i) => (
+              <motion.div key={s.id} transition={{ delay: i * 0.05 }}>
+                <SeasonCard season={s} onLongPress={setEndingSeason} />
+              </motion.div>
+            ))}
+          </div>
+        )}
 
-      <AnimatePresence>
-        {showCreate && <CreateSeasonModal onClose={() => setShowCreate(false)} onCreated={() => setShowCreate(false)} />}
-        {endingSeason && <EndSeasonModal season={endingSeason} onClose={() => setEndingSeason(null)} onConfirm={handleEndSeason} />}
-      </AnimatePresence>
+        <AnimatePresence>
+          {showCreate && <CreateSeasonModal onClose={() => setShowCreate(false)} onCreated={() => setShowCreate(false)} />}
+          {endingSeason && <EndSeasonModal season={endingSeason} onClose={() => setEndingSeason(null)} onConfirm={handleEndSeason} />}
+        </AnimatePresence>
       </div>
     </div>
   );
