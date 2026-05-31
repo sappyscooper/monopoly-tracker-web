@@ -149,11 +149,15 @@ function CreateSeasonModal({ onClose, onCreated }) {
 
         <section>
           <label className="form-section-label">Duration</label>
-          <div className="grid grid-cols-2 gap-3">
-            <input aria-label="Start date" type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
-              className="control" />
-            <input aria-label="End date" type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
-              className="control" />
+          <div className="date-grid">
+            <div className="min-w-0">
+              <input aria-label="Start date" type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                className="control" />
+            </div>
+            <div className="min-w-0">
+              <input aria-label="End date" type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+                className="control" />
+            </div>
           </div>
           {errors.duration && <p className="inline-error">{errors.duration}</p>}
         </section>

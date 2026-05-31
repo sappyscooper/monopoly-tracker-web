@@ -5,6 +5,7 @@ import LeaderboardPage from './pages/LeaderboardPage';
 import LogGamePage from './pages/LogGamePage';
 import HistoryPage from './pages/HistoryPage';
 import StatsPage from './pages/StatsPage';
+import RulesPage from './pages/RulesPage';
 
 export default function App() {
   return (
@@ -17,6 +18,7 @@ export default function App() {
           <Route path="log" element={<LogGamePage />} />
           <Route path="history" element={<HistoryPage />} />
           <Route path="stats" element={<StatsPage />} />
+          <Route path="rules" element={<RulesPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

@@ -226,7 +226,7 @@ export default function LogGamePage() {
         <div className="app-header-inner">
           <h1 className="page-title">Log Game</h1>
           <button className="log-date-button inline-flex items-center gap-2" onClick={() => setShowDateSheet(true)}>
-            <span>{formattedDate}</span>
+            <span className="min-w-0 truncate">{formattedDate}</span>
             <CalendarDays size={15} />
           </button>
         </div>
