@@ -1610,21 +1610,31 @@ button:disabled {
   hyphens: auto;
 }
 
-.annul-rule-row {
+.rule-action-row {
   display: flex;
-  justify-content: flex-end;
-  margin-top: 8px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
   clear: both;
 }
 
+.amend-rule-button,
 .annul-rule-button {
   border: 0;
   background: transparent;
-  color: rgba(139,26,26,0.50);
   font-family: 'IM Fell English', serif;
   font-size: 12px;
   font-style: italic;
   padding: 4px 0;
+}
+
+.amend-rule-button {
+  color: rgba(90,40,0,0.58);
+}
+
+.annul-rule-button {
+  color: rgba(139,26,26,0.50);
 }
 
 .rules-empty-page,
@@ -1721,6 +1731,10 @@ button:disabled {
 }
 
 .rules-delete-sheet {
+  transform: translateY(0) !important;
+}
+
+.rules-edit-sheet {
   transform: translateY(0) !important;
 }
 

@@ -10,6 +10,7 @@ import {
   orderBy,
   query,
   Timestamp,
+  updateDoc,
   writeBatch,
 } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -180,12 +181,22 @@ export function useRules() {
   }, []);
 
   const addRule = async (title, body) => {
+    const nextOrder = rules.reduce((maxOrder, rule) => Math.max(maxOrder, Number(rule.order) || 0), -1) + 1;
+
     await addDoc(collection(db, 'rules'), {
       title,
       body,
       createdAt: Timestamp.now(),
-      order: rules.length,
+      order: nextOrder,
       version: CURRENT_VERSION,
+    });
+  };
+
+  const updateRule = async (ruleId, title, body) => {
+    await updateDoc(doc(db, 'rules', ruleId), {
+      title,
+      body,
+      updatedAt: Timestamp.now(),
     });
   };
 
@@ -193,5 +204,5 @@ export function useRules() {
     await deleteDoc(doc(db, 'rules', ruleId));
   };
 
-  return { rules, loading, error, addRule, deleteRule };
+  return { rules, loading, error, addRule, updateRule, deleteRule };
 }

@@ -4,35 +4,9 @@ import { BookOpen, Plus } from 'lucide-react';
 import Sheet from '../components/Sheet';
 import { useRules } from '../hooks/useRules';
 
-const FIRST_PAGE_TEXT_LIMIT = 360;
-const REGULAR_PAGE_TEXT_LIMIT = 660;
-
-function ruleWeight(rule) {
-  return rule.body.length + Math.round(rule.title.length * 1.5);
-}
-
 function paginateRules(rules) {
-  const pages = [];
-  let currentPage = [];
-  let currentWeight = 0;
-
-  rules.forEach((rule, absoluteIndex) => {
-    const entry = { rule, absoluteIndex };
-    const nextWeight = ruleWeight(rule);
-    const pageLimit = pages.length === 0 ? FIRST_PAGE_TEXT_LIMIT : REGULAR_PAGE_TEXT_LIMIT;
-
-    if (currentPage.length > 0 && currentWeight + nextWeight > pageLimit) {
-      pages.push(currentPage);
-      currentPage = [];
-      currentWeight = 0;
-    }
-
-    currentPage.push(entry);
-    currentWeight += nextWeight;
-  });
-
-  if (currentPage.length > 0) pages.push(currentPage);
-  return pages.length > 0 ? pages : [[]];
+  if (rules.length === 0) return [[]];
+  return rules.map((rule, absoluteIndex) => [{ rule, absoluteIndex }]);
 }
 
 function romanNumeral(value) {
@@ -142,13 +116,16 @@ function Cover({ state, onOpen }) {
   );
 }
 
-function RuleBlock({ rule, number, onRequestDelete }) {
+function RuleBlock({ rule, number, onRequestEdit, onRequestDelete }) {
   return (
     <article className="rule-block">
       <span className="rule-number">{romanNumeral(number)}</span>
       <h4>{rule.title}</h4>
       <p>{rule.body}</p>
-      <div className="annul-rule-row">
+      <div className="rule-action-row">
+        <button type="button" className="amend-rule-button" onClick={() => onRequestEdit(rule)}>
+          ✎ Amend this law
+        </button>
         <button type="button" className="annul-rule-button" onClick={() => onRequestDelete(rule)}>
           ✕ Annul this law
         </button>
@@ -157,7 +134,9 @@ function RuleBlock({ rule, number, onRequestDelete }) {
   );
 }
 
-function ParchmentPage({ pageNumber, totalPages, rules, turning, onRequestDelete }) {
+function ParchmentPage({ pageNumber, totalPages, rules, turning, onRequestEdit, onRequestDelete }) {
+  const chapterNumber = rules[0]?.absoluteIndex + 1 || pageNumber + 1;
+
   return (
     <div className={`rules-page-card ${turning ? `turning-${turning}` : ''}`}>
       <div className="rules-paper-grain" aria-hidden="true" />
@@ -176,7 +155,7 @@ function ParchmentPage({ pageNumber, totalPages, rules, turning, onRequestDelete
         )}
 
         <header className="rules-chapter-heading">
-          <h2>Chapter {romanNumeral(pageNumber + 1)}</h2>
+          <h2>Chapter {romanNumeral(chapterNumber)}</h2>
           <h3>{pageNumber === 0 ? 'The Sacred Laws of the Board' : 'Further Decrees of the Table'}</h3>
         </header>
 
@@ -191,6 +170,7 @@ function ParchmentPage({ pageNumber, totalPages, rules, turning, onRequestDelete
               key={rule.id || `${rule.title}-${absoluteIndex}`}
               rule={rule}
               number={absoluteIndex + 1}
+              onRequestEdit={onRequestEdit}
               onRequestDelete={onRequestDelete}
             />
           ))
@@ -199,6 +179,67 @@ function ParchmentPage({ pageNumber, totalPages, rules, turning, onRequestDelete
 
       <div className="rules-page-number">- {pageNumber + 1} of {totalPages} -</div>
     </div>
+  );
+}
+
+function EditRuleSheet({ rule, onClose, onUpdateRule }) {
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!rule) return;
+    setTitle(rule.title || '');
+    setBody(rule.body || '');
+    setSaving(false);
+  }, [rule]);
+
+  const handleSubmit = async () => {
+    if (!rule || !title.trim() || !body.trim() || saving) return;
+    setSaving(true);
+    try {
+      await onUpdateRule(rule.id, title.trim(), body.trim());
+      onClose();
+    } catch (error) {
+      console.error(error);
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Sheet open={Boolean(rule)} onClose={onClose} className="rules-add-sheet rules-edit-sheet">
+      <div className="rules-sheet-content">
+        <h3>Amend This Law</h3>
+        <p>Refine the wording. The chapter remains in its sacred place.</p>
+
+        <label className="form-section-label">Law Title</label>
+        <input
+          type="text"
+          placeholder="e.g. The Boardwalk Pact"
+          value={title}
+          onChange={event => setTitle(event.target.value)}
+          className="control rules-input"
+        />
+
+        <label className="form-section-label mt-4">The Decree</label>
+        <textarea
+          placeholder="Write the amended decree..."
+          value={body}
+          onChange={event => setBody(event.target.value)}
+          rows={6}
+          className="control rules-textarea"
+        />
+
+        <button
+          type="button"
+          onClick={handleSubmit}
+          disabled={!title.trim() || !body.trim() || saving}
+          className="rules-inscribe-button"
+        >
+          {saving ? 'Amending...' : '✦ Commit This Amendment ✦'}
+        </button>
+      </div>
+    </Sheet>
   );
 }
 
@@ -285,11 +326,13 @@ function AddRuleSheet({ open, onClose, onAddRule }) {
 }
 
 export default function RulesPage() {
-  const { rules, loading, error, addRule, deleteRule } = useRules();
+  const { rules, loading, error, addRule, updateRule, deleteRule } = useRules();
   const [bookState, setBookState] = useState('cover');
   const [currentPage, setCurrentPage] = useState(0);
   const [turning, setTurning] = useState(null);
   const [showAddRule, setShowAddRule] = useState(false);
+  const [showLatestAfterAdd, setShowLatestAfterAdd] = useState(false);
+  const [ruleToEdit, setRuleToEdit] = useState(null);
   const [ruleToDelete, setRuleToDelete] = useState(null);
   const [deletingRule, setDeletingRule] = useState(false);
   const touchStartX = useRef(null);
@@ -319,6 +362,12 @@ export default function RulesPage() {
       setCurrentPage(Math.max(totalPages - 1, 0));
     }
   }, [currentPage, totalPages]);
+
+  useEffect(() => {
+    if (!showLatestAfterAdd || loading) return;
+    setCurrentPage(Math.max(totalPages - 1, 0));
+    setShowLatestAfterAdd(false);
+  }, [loading, showLatestAfterAdd, totalPages]);
 
   const handleCoverTap = () => {
     if (bookState !== 'cover') return;
@@ -357,6 +406,11 @@ export default function RulesPage() {
     setBookState('cover');
     setCurrentPage(0);
     setTurning(null);
+  };
+
+  const handleAddRule = async (title, body) => {
+    await addRule(title, body);
+    setShowLatestAfterAdd(true);
   };
 
   const handleDeleteRule = async () => {
@@ -412,6 +466,7 @@ export default function RulesPage() {
               totalPages={totalPages}
               rules={pageRules}
               turning={turning}
+              onRequestEdit={setRuleToEdit}
               onRequestDelete={setRuleToDelete}
             />
           </animated.div>
@@ -424,7 +479,14 @@ export default function RulesPage() {
         <button type="button" onClick={() => turnPage('next')} disabled={currentPage === totalPages - 1}>Next →</button>
       </footer>
 
-      <AddRuleSheet open={showAddRule} onClose={() => setShowAddRule(false)} onAddRule={addRule} />
+      <AddRuleSheet open={showAddRule} onClose={() => setShowAddRule(false)} onAddRule={handleAddRule} />
+      {ruleToEdit && (
+        <EditRuleSheet
+          rule={ruleToEdit}
+          onClose={() => setRuleToEdit(null)}
+          onUpdateRule={updateRule}
+        />
+      )}
       {ruleToDelete && (
         <DeleteRuleSheet
           rule={ruleToDelete}
