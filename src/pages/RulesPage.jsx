@@ -4,7 +4,36 @@ import { BookOpen, Plus } from 'lucide-react';
 import Sheet from '../components/Sheet';
 import { useRules } from '../hooks/useRules';
 
-const RULES_PER_PAGE = 2;
+const FIRST_PAGE_TEXT_LIMIT = 360;
+const REGULAR_PAGE_TEXT_LIMIT = 660;
+
+function ruleWeight(rule) {
+  return rule.body.length + Math.round(rule.title.length * 1.5);
+}
+
+function paginateRules(rules) {
+  const pages = [];
+  let currentPage = [];
+  let currentWeight = 0;
+
+  rules.forEach((rule, absoluteIndex) => {
+    const entry = { rule, absoluteIndex };
+    const nextWeight = ruleWeight(rule);
+    const pageLimit = pages.length === 0 ? FIRST_PAGE_TEXT_LIMIT : REGULAR_PAGE_TEXT_LIMIT;
+
+    if (currentPage.length > 0 && currentWeight + nextWeight > pageLimit) {
+      pages.push(currentPage);
+      currentPage = [];
+      currentWeight = 0;
+    }
+
+    currentPage.push(entry);
+    currentWeight += nextWeight;
+  });
+
+  if (currentPage.length > 0) pages.push(currentPage);
+  return pages.length > 0 ? pages : [[]];
+}
 
 function romanNumeral(value) {
   const numerals = [
@@ -267,16 +296,7 @@ export default function RulesPage() {
   const turnTimerRef = useRef(null);
 
   const pages = useMemo(() => {
-    const grouped = [];
-    for (let index = 0; index < rules.length; index += RULES_PER_PAGE) {
-      grouped.push(
-        rules.slice(index, index + RULES_PER_PAGE).map((rule, offset) => ({
-          rule,
-          absoluteIndex: index + offset,
-        }))
-      );
-    }
-    return grouped.length > 0 ? grouped : [[]];
+    return paginateRules(rules);
   }, [rules]);
 
   const totalPages = pages.length;
