@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Trash2 } from 'lucide-react';
+import { CircleDot, Plus, Trash2 } from 'lucide-react';
 import { collection, addDoc, doc, updateDoc, serverTimestamp, writeBatch, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useSeasons } from '../hooks/useSeasons';
@@ -13,7 +13,7 @@ import { seasonLeaderboard, formatPoints } from '../utils/scoring';
 
 const DEFAULT_PLAYERS = ['Cheok', 'Cheng', 'Breydon', 'Ian', 'Jedd'];
 
-function SeasonCard({ season, onLongPress, onDeleteRequest }) {
+function SeasonCard({ season, onLongPress, onDeleteRequest, onSetActive, activating }) {
   const { games } = useGames(season.id);
   const pressTimer = useRef(null);
 
@@ -76,6 +76,23 @@ function SeasonCard({ season, onLongPress, onDeleteRequest }) {
             <p className="section-label normal-case tracking-normal">cameo</p>
           </div>
         </div>
+        {!season.isActive && (
+          <button
+            type="button"
+            className="season-select-button mt-4"
+            disabled={activating}
+            onPointerDown={stopCardPress}
+            onMouseDown={stopCardPress}
+            onTouchStart={stopCardPress}
+            onClick={(event) => {
+              stopCardPress(event);
+              onSetActive(season);
+            }}
+          >
+            <CircleDot size={15} />
+            {activating ? 'Activating...' : 'Make Active Season'}
+          </button>
+        )}
       </GlassCard>
     </motion.div>
   );
@@ -328,6 +345,7 @@ export default function SeasonsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [endingSeason, setEndingSeason] = useState(null);
   const [deletingSeason, setDeletingSeason] = useState(null);
+  const [activatingSeasonId, setActivatingSeasonId] = useState(null);
 
   const handleEndSeason = async (season) => {
     await updateDoc(doc(db, 'seasons', season.id), { isActive: false });
@@ -349,6 +367,23 @@ export default function SeasonsPage() {
       await batch.commit();
     }
     setDeletingSeason(null);
+  };
+
+  const handleSetActiveSeason = async (season) => {
+    if (!season?.id || activatingSeasonId) return;
+    setActivatingSeasonId(season.id);
+    try {
+      const snap = await getDocs(collection(db, 'seasons'));
+      const batch = writeBatch(db);
+      snap.docs.forEach(seasonDoc => {
+        batch.update(seasonDoc.ref, { isActive: seasonDoc.id === season.id });
+      });
+      await batch.commit();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setActivatingSeasonId(null);
+    }
   };
 
   if (loading) return (
@@ -386,7 +421,13 @@ export default function SeasonsPage() {
           <div className="space-y-3">
             {(seasons || []).map((s, i) => (
               <motion.div key={s.id} transition={{ delay: i * 0.05 }}>
-                <SeasonCard season={s} onLongPress={setEndingSeason} onDeleteRequest={setDeletingSeason} />
+                <SeasonCard
+                  season={s}
+                  onLongPress={setEndingSeason}
+                  onDeleteRequest={setDeletingSeason}
+                  onSetActive={handleSetActiveSeason}
+                  activating={activatingSeasonId === s.id}
+                />
               </motion.div>
             ))}
           </div>

@@ -2,8 +2,9 @@ import { useMemo, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { Info } from 'lucide-react';
 import { useActiveSeason } from '../hooks/useActiveSeason';
+import { useAllGames } from '../hooks/useAllGames';
 import { useGames } from '../hooks/useGames';
-import { calculateGamePoints, seasonLeaderboard, formatPoints } from '../utils/scoring';
+import { calculateGamePoints, formatPoints } from '../utils/scoring';
 import GlassCard from '../components/GlassCard';
 import EmptyState from '../components/EmptyState';
 import Sheet from '../components/Sheet';
@@ -66,20 +67,29 @@ function MiniSparkline({ values, color }) {
   );
 }
 
-function computeStats(season, games) {
+function computeStats(season, games, options = {}) {
   if (!season || !games.length) return null;
-  const players = season.regularPlayers || [];
+  const players = options.players || season.regularPlayers || [];
   const cameoWeight = season.cameoWeight ?? 0.5;
+  const pointsForGame = options.pointsForGame || ((game) => calculateGamePoints(game.placements || [], cameoWeight));
   const sortedGamesDesc = [...games].sort((a, b) => (b.date?.seconds || 0) - (a.date?.seconds || 0));
   const sortedGamesAsc = [...games].sort((a, b) => (a.date?.seconds || 0) - (b.date?.seconds || 0));
 
-  const leaderboard = seasonLeaderboard(games, players, cameoWeight);
+  const totals = Object.fromEntries(players.map(player => [player, 0]));
+  games.forEach(game => {
+    Object.entries(pointsForGame(game)).forEach(([player, points]) => {
+      if (totals[player] !== undefined) totals[player] += points;
+    });
+  });
+  const leaderboard = Object.entries(totals)
+    .map(([player, points]) => ({ player, points }))
+    .sort((a, b) => b.points - a.points || a.player.localeCompare(b.player));
   const totalGames = games.length;
 
   const now = new Date();
   const endDate = season.endDate?.toDate ? season.endDate.toDate() : new Date(season.endDate);
   const daysLeft = Math.max(0, Math.ceil((endDate - now) / (1000 * 60 * 60 * 24)));
-  const remainingGames = Math.max(0, Math.ceil(daysLeft / 7));
+  const remainingGames = options.remainingGames ?? Math.max(0, Math.ceil(daysLeft / 7));
 
   const gamesPlayedByPlayer = Object.fromEntries(players.map(player => [player, 0]));
   games.forEach(game => {
@@ -94,7 +104,7 @@ function computeStats(season, games) {
     const gamesPlayed = gamesPlayedByPlayer[row.player] || 0;
     const avg = gamesPlayed > 0 ? row.points / gamesPlayed : 0;
     const recentGames = sortedGamesDesc.slice(0, 5).reverse();
-    const sparkline = recentGames.map(game => calculateGamePoints(game.placements || [], cameoWeight)[row.player] ?? 0);
+    const sparkline = recentGames.map(game => pointsForGame(game)[row.player] ?? 0);
     return { ...row, gamesPlayed, avg, sparkline, accent: ACCENTS[index % ACCENTS.length] };
   });
 
@@ -166,7 +176,7 @@ function computeStats(season, games) {
   const cameoGames = games.filter(game => game.placements?.some(placement => placement.isCameo));
   const regularGames = games.filter(game => !game.placements?.some(placement => placement.isCameo));
   const avgScore = (gameSet) => {
-    const scores = gameSet.flatMap(game => Object.values(calculateGamePoints(game.placements || [], cameoWeight)));
+    const scores = gameSet.flatMap(game => Object.values(pointsForGame(game)));
     return scores.length ? scores.reduce((total, value) => total + value, 0) / scores.length : 0;
   };
   const cameoDelta = cameoGames.length > 0 && regularGames.length > 0
@@ -237,11 +247,63 @@ function computeStats(season, games) {
 }
 
 export default function StatsPage() {
-  const { activeSeason: season, loading: seasonsLoading } = useActiveSeason();
+  const [scope, setScope] = useState('season');
+  const { activeSeason: season, seasons, loading: seasonsLoading } = useActiveSeason();
   const { games, loading: gamesLoading } = useGames(season?.id);
-  const stats = useMemo(() => computeStats(season, games || []), [season, games]);
+  const { games: allGames, loading: allGamesLoading } = useAllGames();
 
-  if (seasonsLoading || gamesLoading) return (
+  const seasonById = useMemo(() => (
+    Object.fromEntries((seasons || []).map(item => [item.id, item]))
+  ), [seasons]);
+
+  const lifetimePlayers = useMemo(() => {
+    const seen = new Set();
+    const players = [];
+    (seasons || []).forEach(item => {
+      (item.regularPlayers || []).forEach(player => {
+        const key = player.trim().toLowerCase();
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        players.push(player.trim());
+      });
+    });
+    (allGames || []).forEach(game => {
+      (game.placements || []).forEach(placement => {
+        if (placement.isCameo) return;
+        const key = placement.player.trim().toLowerCase();
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        players.push(placement.player.trim());
+      });
+    });
+    return players;
+  }, [seasons, allGames]);
+
+  const lifetimeSeason = useMemo(() => ({
+    id: 'lifetime',
+    name: 'Lifetime',
+    regularPlayers: lifetimePlayers,
+    cameoWeight: 0.5,
+    startDate: seasons?.at(-1)?.startDate || new Date(),
+    endDate: new Date(),
+    isActive: true,
+  }), [lifetimePlayers, seasons]);
+
+  const seasonStats = useMemo(() => computeStats(season, games || []), [season, games]);
+  const lifetimeStats = useMemo(() => computeStats(lifetimeSeason, allGames || [], {
+    players: lifetimePlayers,
+    remainingGames: 0,
+    pointsForGame: (game) => {
+      const sourceSeason = seasonById[game.seasonId];
+      return calculateGamePoints(game.placements || [], sourceSeason?.cameoWeight ?? 0.5);
+    },
+  }), [lifetimeSeason, allGames, lifetimePlayers, seasonById]);
+
+  const selectedStats = scope === 'lifetime' ? lifetimeStats : seasonStats;
+  const selectedSeason = scope === 'lifetime' ? lifetimeSeason : season;
+  const loading = seasonsLoading || gamesLoading || allGamesLoading;
+
+  if (loading) return (
     <div className="page">
       <header className="app-header">
         <div className="app-header-inner">
@@ -267,22 +329,44 @@ export default function StatsPage() {
     </div>
   );
 
-  if (!stats) return (
+  const ScopeTabs = (
+    <div className="stats-scope-tabs" role="tablist" aria-label="Stats scope">
+      <button
+        type="button"
+        className={scope === 'season' ? 'active' : ''}
+        onClick={() => setScope('season')}
+      >
+        This Season
+      </button>
+      <button
+        type="button"
+        className={scope === 'lifetime' ? 'active' : ''}
+        onClick={() => setScope('lifetime')}
+      >
+        Lifetime
+      </button>
+    </div>
+  );
+
+  if (!selectedStats) return (
     <div className="page">
       <header className="app-header">
         <div className="app-header-inner">
           <div className="min-w-0">
             <h1 className="page-title">Season Stats</h1>
-            <p className="secondary-text truncate">{season.name}</p>
+            <p className="secondary-text truncate">{selectedSeason?.name}</p>
           </div>
         </div>
       </header>
       <div className="page-inner">
+        {ScopeTabs}
         <div className="mt-8"><EmptyState icon="🎲" title="No games yet" message="Log your first game to see stats." /></div>
       </div>
     </div>
   );
 
+  const stats = selectedStats;
+  const isLifetime = scope === 'lifetime';
   const { leaderboard, players, headToHead, recentForm, streaks, cameoRows, projectedRows } = stats;
   const maxAvg = Math.max(...leaderboard.map(row => row.avg), 1);
   const maxProjected = Math.max(...projectedRows.map(row => row.projected), 1);
@@ -293,20 +377,27 @@ export default function StatsPage() {
         <div className="app-header-inner">
           <div className="min-w-0">
             <h1 className="page-title">Season Stats</h1>
-            <p className="secondary-text truncate">{season.name}</p>
+            <p className="secondary-text truncate">{isLifetime ? `${allGames.length} games across ${seasons.length} seasons` : season.name}</p>
           </div>
         </div>
       </header>
 
       <div className="page-inner stats-stack">
-        <StatCard title="Season at a Glance" explanation="A quick overview of where your season stands. Total Games counts every game logged. Est. Remaining is a rough projection based on end date. Highest Avg shows who earns the most points per game. Closest Rivals names the two players with the smallest average placing gap.">
+        {ScopeTabs}
+
+        <StatCard title={isLifetime ? 'Lifetime at a Glance' : 'Season at a Glance'} explanation={isLifetime ? 'A career-level view across every season and every logged game. Highest Avg is calculated from games each player actually played.' : 'A quick overview of where your season stands. Total Games counts every game logged. Est. Remaining is a rough projection based on end date. Highest Avg shows who earns the most points per game. Closest Rivals names the two players with the smallest average placing gap.'}>
           <div className="snapshot-grid">
-            {[
+            {(isLifetime ? [
+              { value: stats.totalGames, sub: 'lifetime games played' },
+              { value: seasons.length, sub: 'seasons tracked' },
+              { value: stats.mostDominantPlayer, sub: `${formatOne(stats.mostDominantAvg)} pts/game avg` },
+              { value: stats.biggestRivalry, sub: `closest rivals, avg ${formatOne(stats.biggestRivalryGap)} gap` },
+            ] : [
               { value: stats.totalGames, sub: 'games played so far' },
               { value: stats.remainingGames, sub: 'games left this season' },
               { value: stats.mostDominantPlayer, sub: `${formatOne(stats.mostDominantAvg)} pts/game avg` },
               { value: stats.biggestRivalry, sub: `closest rivals, avg ${formatOne(stats.biggestRivalryGap)} gap` },
-            ].map(tile => (
+            ]).map(tile => (
               <div key={`${tile.value}-${tile.sub}`} className="snapshot-tile">
                 <p className="snapshot-value">{tile.value}</p>
                 <p className="snapshot-subtext">{tile.sub}</p>
@@ -315,7 +406,7 @@ export default function StatsPage() {
           </div>
         </StatCard>
 
-        <StatCard title="Who's Winning Right Now" explanation="Current standings with sparklines showing each player's latest scoring trend. Trend badges appear once there are enough games to compare momentum.">
+        <StatCard title={isLifetime ? 'All-Time Standings' : "Who's Winning Right Now"} explanation="Current standings with sparklines showing each player's latest scoring trend. Trend badges appear once there are enough games to compare momentum.">
           {leaderboard.length === 0 ? (
             <StatsInlineEmptyState>Log a game to generate standings.</StatsInlineEmptyState>
           ) : (
@@ -353,7 +444,7 @@ export default function StatsPage() {
           )}
         </StatCard>
 
-        <StatCard title="Consistency Score" explanation="Average points per game played. This shows who performs steadily, not just who has the highest total.">
+        <StatCard title={isLifetime ? 'Lifetime Consistency' : 'Consistency Score'} explanation="Average points per game played. This shows who performs steadily, not just who has the highest total.">
           <div className="space-y-2">
             {[...leaderboard].sort((a, b) => b.avg - a.avg).map((row, index, arr) => (
               <div key={row.player} className="bar-row">
@@ -436,7 +527,7 @@ export default function StatsPage() {
 
         <StatCard title="Cameo Effect" explanation="Tracks guest players who joined without being in the regular season. The delta compares average regular-player scores in cameo games vs normal games.">
           {stats.totalCameoAppearances === 0 ? (
-            <StatsInlineEmptyState>No cameo guests have joined this season yet.</StatsInlineEmptyState>
+              <StatsInlineEmptyState>No cameo guests have joined {isLifetime ? 'yet' : 'this season yet'}.</StatsInlineEmptyState>
           ) : (
             <>
               <div className={`cameo-delta-tile ${
@@ -498,8 +589,8 @@ export default function StatsPage() {
           </div>
         </StatCard>
 
-        <StatCard title="End of Season Forecast" explanation="A rough forecast of final standings if current scoring rates continue. It multiplies each player's average points per game by estimated total games.">
-          <div className="forecast-headline !mt-0">{stats.forecastHeadline}</div>
+        <StatCard title={isLifetime ? 'Lifetime Pace' : 'End of Season Forecast'} explanation={isLifetime ? 'All-time totals and average scoring pace across every logged game.' : 'A rough forecast of final standings if current scoring rates continue. It multiplies each player’s average points per game by estimated total games.'}>
+          <div className="forecast-headline !mt-0">{isLifetime ? 'All-time totals so far' : stats.forecastHeadline}</div>
           <div className="mt-3 space-y-3">
             {projectedRows.map(row => (
               <div key={row.player} className="projection-row">
@@ -507,14 +598,16 @@ export default function StatsPage() {
                 <div className="projection-bar">
                   <div className="projection-fill" style={{ width: `${Math.max(3, (row.projected / maxProjected) * 100)}%`, background: row.accent }} />
                 </div>
-                <span className="projection-points">{formatPoints(row.current)} → {formatPoints(row.projected)} pts</span>
+                <span className="projection-points">
+                  {isLifetime ? `${formatPoints(row.current)} pts` : `${formatPoints(row.current)} → ${formatPoints(row.projected)} pts`}
+                </span>
                 <span className="w-5 text-center text-sm">
                   {row.player === stats.projectedWinner ? '🏆' : row.player === stats.projectedLoser ? '💀' : ''}
                 </span>
               </div>
             ))}
           </div>
-          <p className="mt-3 text-xs text-[#8E8E93]">Projection based on current avg pts/game</p>
+          <p className="mt-3 text-xs text-[#8E8E93]">{isLifetime ? 'Lifetime uses each game’s original season settings' : 'Projection based on current avg pts/game'}</p>
         </StatCard>
       </div>
     </div>
