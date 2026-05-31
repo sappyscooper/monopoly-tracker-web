@@ -1,13 +1,12 @@
 import { NavLink } from 'react-router-dom';
-import { Trophy, List, PlusCircle, Clock, BarChart2, BookOpen } from 'lucide-react';
+import { Calendar, Trophy, PlusCircle, Clock, BarChart2 } from 'lucide-react';
 
 const tabs = [
-  { to: '/seasons', icon: Trophy, label: 'Seasons' },
-  { to: '/leaderboard', icon: List, label: 'Board' },
+  { to: '/seasons', icon: Calendar, label: 'Seasons' },
+  { to: '/leaderboard', icon: Trophy, label: 'Board' },
   { to: '/log', icon: PlusCircle, label: 'Log', center: true },
   { to: '/history', icon: Clock, label: 'History' },
   { to: '/stats', icon: BarChart2, label: 'Stats' },
-  { to: '/rules', icon: BookOpen, label: 'Bible' },
 ];
 
 export default function BottomNav() {

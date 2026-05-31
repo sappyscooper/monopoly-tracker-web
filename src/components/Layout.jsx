@@ -1,4 +1,5 @@
 import { Outlet } from 'react-router-dom';
+import BibleFAB from './BibleFAB';
 import BottomNav from './BottomNav';
 
 export default function Layout() {
@@ -8,6 +9,7 @@ export default function Layout() {
         <Outlet />
       </main>
       <BottomNav />
+      <BibleFAB />
     </div>
   );
 }

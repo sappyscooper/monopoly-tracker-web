@@ -113,17 +113,22 @@ function Cover({ state, onOpen }) {
   );
 }
 
-function RuleBlock({ rule, number }) {
+function RuleBlock({ rule, number, onRequestDelete }) {
   return (
     <article className="rule-block">
       <span className="rule-number">{romanNumeral(number)}</span>
       <h4>{rule.title}</h4>
       <p>{rule.body}</p>
+      <div className="annul-rule-row">
+        <button type="button" className="annul-rule-button" onClick={() => onRequestDelete(rule)}>
+          ✕ Annul this law
+        </button>
+      </div>
     </article>
   );
 }
 
-function ParchmentPage({ pageNumber, totalPages, rules, turning }) {
+function ParchmentPage({ pageNumber, totalPages, rules, turning, onRequestDelete }) {
   return (
     <div className={`rules-page-card ${turning ? `turning-${turning}` : ''}`}>
       <div className="rules-paper-grain" aria-hidden="true" />
@@ -153,13 +158,39 @@ function ParchmentPage({ pageNumber, totalPages, rules, turning }) {
           </div>
         ) : (
           rules.map(({ rule, absoluteIndex }) => (
-            <RuleBlock key={rule.id || `${rule.title}-${absoluteIndex}`} rule={rule} number={absoluteIndex + 1} />
+            <RuleBlock
+              key={rule.id || `${rule.title}-${absoluteIndex}`}
+              rule={rule}
+              number={absoluteIndex + 1}
+              onRequestDelete={onRequestDelete}
+            />
           ))
         )}
       </div>
 
       <div className="rules-page-number">- {pageNumber + 1} of {totalPages} -</div>
     </div>
+  );
+}
+
+function DeleteRuleSheet({ rule, deleting, onClose, onConfirm }) {
+  return (
+    <Sheet open={Boolean(rule)} onClose={onClose} className="rules-add-sheet rules-delete-sheet">
+      <div className="rules-sheet-content">
+        <h3 className="rules-delete-title">Annul This Law?</h3>
+        <p>
+          “{rule?.title}” shall be struck from the sacred tome forever. This act cannot be undone.
+        </p>
+        <div className="rules-delete-actions">
+          <button type="button" onClick={onConfirm} disabled={deleting} className="rules-strike-button">
+            {deleting ? 'Striking...' : '✦ Strike It From the Record ✦'}
+          </button>
+          <button type="button" onClick={onClose} disabled={deleting} className="rules-spare-button">
+            Spare This Law
+          </button>
+        </div>
+      </div>
+    </Sheet>
   );
 }
 
@@ -225,11 +256,13 @@ function AddRuleSheet({ open, onClose, onAddRule }) {
 }
 
 export default function RulesPage() {
-  const { rules, loading, error, addRule } = useRules();
+  const { rules, loading, error, addRule, deleteRule } = useRules();
   const [bookState, setBookState] = useState('cover');
   const [currentPage, setCurrentPage] = useState(0);
   const [turning, setTurning] = useState(null);
   const [showAddRule, setShowAddRule] = useState(false);
+  const [ruleToDelete, setRuleToDelete] = useState(null);
+  const [deletingRule, setDeletingRule] = useState(false);
   const touchStartX = useRef(null);
   const turnTimerRef = useRef(null);
 
@@ -306,6 +339,22 @@ export default function RulesPage() {
     setTurning(null);
   };
 
+  const handleDeleteRule = async () => {
+    if (!ruleToDelete || deletingRule) return;
+    setDeletingRule(true);
+    try {
+      await deleteRule(ruleToDelete.id);
+      setRuleToDelete(null);
+      if (pageRules.length === 1 && currentPage > 0) {
+        setCurrentPage(page => page - 1);
+      }
+    } catch (deleteError) {
+      console.error(deleteError);
+    } finally {
+      setDeletingRule(false);
+    }
+  };
+
   if (bookState !== 'open') {
     return (
       <main className="rules-page rules-cover-mode">
@@ -343,6 +392,7 @@ export default function RulesPage() {
               totalPages={totalPages}
               rules={pageRules}
               turning={turning}
+              onRequestDelete={setRuleToDelete}
             />
           </animated.div>
         )}
@@ -355,6 +405,14 @@ export default function RulesPage() {
       </footer>
 
       <AddRuleSheet open={showAddRule} onClose={() => setShowAddRule(false)} onAddRule={addRule} />
+      {ruleToDelete && (
+        <DeleteRuleSheet
+          rule={ruleToDelete}
+          deleting={deletingRule}
+          onClose={() => setRuleToDelete(null)}
+          onConfirm={handleDeleteRule}
+        />
+      )}
     </main>
   );
 }

@@ -19,6 +19,7 @@ export default function Sheet({ open, title, subtitle, children, onClose, classN
       {open && (
         <motion.div
           className="sheet-root"
+          data-modal
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -26,6 +27,7 @@ export default function Sheet({ open, title, subtitle, children, onClose, classN
           <button className="sheet-backdrop" aria-label="Close sheet" onClick={onClose} />
           <motion.section
             className={`sheet-panel ${className}`}
+            data-sheet
             role="dialog"
             aria-modal="true"
             aria-labelledby={title ? 'sheet-title' : undefined}
