@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus } from 'lucide-react';
-import { collection, addDoc, doc, updateDoc, serverTimestamp, writeBatch, getDocs } from 'firebase/firestore';
+import { Plus, Trash2 } from 'lucide-react';
+import { collection, addDoc, doc, updateDoc, serverTimestamp, writeBatch, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useSeasons } from '../hooks/useSeasons';
 import { useGames } from '../hooks/useGames';
@@ -13,15 +13,20 @@ import { seasonLeaderboard, formatPoints } from '../utils/scoring';
 
 const DEFAULT_PLAYERS = ['Cheok', 'Cheng', 'Breydon', 'Ian', 'Jedd'];
 
-function SeasonCard({ season, onLongPress }) {
+function SeasonCard({ season, onLongPress, onDeleteRequest }) {
   const { games } = useGames(season.id);
   const pressTimer = useRef(null);
 
-  const handlePressStart = () => {
+  const handlePressStart = (event) => {
     if (!season.isActive) return;
+    if (event.target.closest?.('button')) return;
     pressTimer.current = setTimeout(() => onLongPress(season), 500);
   };
   const handlePressEnd = () => clearTimeout(pressTimer.current);
+  const stopCardPress = (event) => {
+    event.stopPropagation();
+    clearTimeout(pressTimer.current);
+  };
 
   const fmt = (ts) => {
     if (!ts) return '?';
@@ -39,7 +44,23 @@ function SeasonCard({ season, onLongPress }) {
             <h2 className="card-title truncate">{season.name}</h2>
             <p className="secondary-text mt-1">{fmt(season.startDate)} - {fmt(season.endDate)}</p>
           </div>
-          <StatusPill active={season.isActive} />
+          <div className="flex shrink-0 items-center gap-2">
+            <StatusPill active={season.isActive} />
+            <button
+              type="button"
+              className="season-delete-button"
+              aria-label={`Delete ${season.name}`}
+              onPointerDown={stopCardPress}
+              onMouseDown={stopCardPress}
+              onTouchStart={stopCardPress}
+              onClick={(event) => {
+                stopCardPress(event);
+                onDeleteRequest(season);
+              }}
+            >
+              <Trash2 size={15} />
+            </button>
+          </div>
         </div>
         <div className="grid grid-cols-3 gap-3">
           <div>
@@ -252,14 +273,82 @@ function EndSeasonModal({ season, onClose, onConfirm }) {
   );
 }
 
+function DeleteSeasonModal({ season, onClose, onConfirm }) {
+  const { games } = useGames(season?.id);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleDelete = async () => {
+    if (deleting) return;
+    setDeleting(true);
+    setError('');
+    try {
+      await onConfirm(season);
+    } catch (e) {
+      console.error(e);
+      setError('Could not delete this season. Try again in a moment.');
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <Sheet open title="Delete Season?" subtitle={season.name} onClose={onClose}>
+      <div className="space-y-4">
+        <div className="card bg-[#26262e]">
+          <p className="section-label mb-2">This will remove</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <p className="number-text text-lg font-bold text-white">1</p>
+              <p className="section-label normal-case tracking-normal">season</p>
+            </div>
+            <div>
+              <p className="number-text text-lg font-bold text-white">{games.length}</p>
+              <p className="section-label normal-case tracking-normal">games</p>
+            </div>
+          </div>
+        </div>
+        <p className="secondary-text">
+          This permanently deletes the season and every logged game attached to it. Leaderboards, history, and stats for this season will disappear.
+        </p>
+        {error && <p className="inline-error">{error}</p>}
+        <div className="space-y-3">
+          <button onClick={handleDelete} disabled={deleting}
+            className="destructive-button disabled:opacity-50">
+            {deleting ? 'Deleting...' : 'Delete Season'}
+          </button>
+          <button onClick={onClose} disabled={deleting} className="secondary-button disabled:opacity-50">Cancel</button>
+        </div>
+      </div>
+    </Sheet>
+  );
+}
+
 export default function SeasonsPage() {
   const { seasons, loading } = useSeasons();
   const [showCreate, setShowCreate] = useState(false);
   const [endingSeason, setEndingSeason] = useState(null);
+  const [deletingSeason, setDeletingSeason] = useState(null);
 
   const handleEndSeason = async (season) => {
     await updateDoc(doc(db, 'seasons', season.id), { isActive: false });
     setEndingSeason(null);
+  };
+
+  const handleDeleteSeason = async (season) => {
+    if (!season?.id) return;
+    const gamesQuery = query(collection(db, 'games'), where('seasonId', '==', season.id));
+    const gamesSnap = await getDocs(gamesQuery);
+    const refsToDelete = [
+      ...gamesSnap.docs.map(gameDoc => gameDoc.ref),
+      doc(db, 'seasons', season.id),
+    ];
+
+    for (let index = 0; index < refsToDelete.length; index += 450) {
+      const batch = writeBatch(db);
+      refsToDelete.slice(index, index + 450).forEach(ref => batch.delete(ref));
+      await batch.commit();
+    }
+    setDeletingSeason(null);
   };
 
   if (loading) return (
@@ -297,7 +386,7 @@ export default function SeasonsPage() {
           <div className="space-y-3">
             {(seasons || []).map((s, i) => (
               <motion.div key={s.id} transition={{ delay: i * 0.05 }}>
-                <SeasonCard season={s} onLongPress={setEndingSeason} />
+                <SeasonCard season={s} onLongPress={setEndingSeason} onDeleteRequest={setDeletingSeason} />
               </motion.div>
             ))}
           </div>
@@ -306,6 +395,7 @@ export default function SeasonsPage() {
         <AnimatePresence>
           {showCreate && <CreateSeasonModal onClose={() => setShowCreate(false)} onCreated={() => setShowCreate(false)} />}
           {endingSeason && <EndSeasonModal season={endingSeason} onClose={() => setEndingSeason(null)} onConfirm={handleEndSeason} />}
+          {deletingSeason && <DeleteSeasonModal season={deletingSeason} onClose={() => setDeletingSeason(null)} onConfirm={handleDeleteSeason} />}
         </AnimatePresence>
       </div>
     </div>
