@@ -22,6 +22,13 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
+      injectRegister: null,
+      workbox: {
+        cleanupOutdatedCaches: true,
+        clientsClaim: true,
+        skipWaiting: true,
+        importScripts: ['sw-force-update.js'],
+      },
       includeAssets: ['favicon.ico'],
       manifest: {
         name: 'Monopoly Tracker',
