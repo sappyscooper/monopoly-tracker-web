@@ -119,7 +119,7 @@ export default function LeaderboardPage() {
   );
 
   const safeGames = games || [];
-  const leaderboard = season ? seasonLeaderboard(safeGames, season.regularPlayers || [], season.cameoWeight ?? 0.5) : [];
+  const leaderboard = season ? seasonLeaderboard(safeGames, season.regularPlayers || []) : [];
   const champion = leaderboard[0];
   const loser = leaderboard[leaderboard.length - 1];
   const showCelebration = !season.isActive && !celebrationDismissed && safeGames.length > 0;
@@ -168,7 +168,7 @@ export default function LeaderboardPage() {
               const recent = [...safeGames]
                 .sort((a, b) => (a.date?.seconds || 0) - (b.date?.seconds || 0))
                 .slice(-5)
-                .map(game => calculateGamePoints(game.placements || [], season.cameoWeight ?? 0.5)[row.player] || 0);
+                .map(game => calculateGamePoints(game.placements || [])[row.player] || 0);
               return (
                 <motion.div key={row.player} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: i * 0.05 }}>

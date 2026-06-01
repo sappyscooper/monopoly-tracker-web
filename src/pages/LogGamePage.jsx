@@ -167,7 +167,7 @@ export default function LogGamePage() {
   };
 
   const placements = buildPlacements();
-  const scores = season ? calculateGamePoints(placements, season.cameoWeight ?? 0.5) : {};
+  const scores = season ? calculateGamePoints(placements) : {};
   const canSubmit = activeRegulars.length >= 2 && !saving;
 
   const resetForm = () => {
@@ -260,7 +260,7 @@ export default function LogGamePage() {
 
         <section className="mt-5">
           <p className="section-label">Cameo Guests</p>
-          <p className="section-subtext">Added guests appear in finishing order so you can rank their place.</p>
+          <p className="section-subtext">Guests keep their place in the order but never earn or change points.</p>
           <div className="mt-3">
             <div className="compact-add-row">
               <input ref={cameoInputRef} value={cameoInput}

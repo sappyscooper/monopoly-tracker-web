@@ -4,36 +4,22 @@ function pointsForPlace(place) {
   return BASE_POINTS[place] ?? BASE_POINTS[5];
 }
 
-export function interpolatedPoints(effectivePlacing) {
-  const lower = Math.floor(effectivePlacing);
-  const upper = Math.ceil(effectivePlacing);
-  const fraction = effectivePlacing - lower;
-  const pLow = pointsForPlace(lower);
-  const pHigh = pointsForPlace(upper);
-  return pLow - (pLow - pHigh) * fraction;
-}
-
-export function calculateGamePoints(placements, cameoWeight = 0.5) {
+export function calculateGamePoints(placements = []) {
   const regularPlacements = placements
     .filter(p => !p.isCameo)
     .sort((a, b) => a.placing - b.placing);
   const scores = {};
   regularPlacements.forEach((placement, index) => {
-    const rankAmongRegulars = index + 1;
-    const cameosAhead = placements.filter(
-      p => p.isCameo && p.placing < placement.placing
-    ).length;
-    const effectivePlacing = rankAmongRegulars + cameosAhead * cameoWeight;
-    scores[placement.player] = interpolatedPoints(effectivePlacing);
+    scores[placement.player] = pointsForPlace(index + 1);
   });
   return scores;
 }
 
-export function seasonLeaderboard(games, regularPlayers, cameoWeight) {
+export function seasonLeaderboard(games, regularPlayers) {
   const totals = {};
   regularPlayers.forEach(p => totals[p] = 0);
   games.forEach(game => {
-    const pts = calculateGamePoints(game.placements, cameoWeight);
+    const pts = calculateGamePoints(game.placements);
     Object.entries(pts).forEach(([player, points]) => {
       if (totals[player] !== undefined) totals[player] += points;
     });

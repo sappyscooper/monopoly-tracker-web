@@ -16,7 +16,7 @@ function GameRow({ game, season }) {
   const [deleteRevealed, setDeleteRevealed] = useState(false);
   const [touchStartX, setTouchStartX] = useState(null);
 
-  const scores = calculateGamePoints(game.placements || [], season?.cameoWeight ?? 0.5);
+  const scores = calculateGamePoints(game.placements || []);
   const topPlayers = (game.placements || [])
     .filter(p => !p.isCameo)
     .sort((a, b) => a.placing - b.placing)

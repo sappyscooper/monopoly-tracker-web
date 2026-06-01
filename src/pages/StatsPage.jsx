@@ -70,8 +70,7 @@ function MiniSparkline({ values, color }) {
 function computeStats(season, games, options = {}) {
   if (!season || !games.length) return null;
   const players = options.players || season.regularPlayers || [];
-  const cameoWeight = season.cameoWeight ?? 0.5;
-  const pointsForGame = options.pointsForGame || ((game) => calculateGamePoints(game.placements || [], cameoWeight));
+  const pointsForGame = options.pointsForGame || ((game) => calculateGamePoints(game.placements || []));
   const sortedGamesDesc = [...games].sort((a, b) => (b.date?.seconds || 0) - (a.date?.seconds || 0));
   const sortedGamesAsc = [...games].sort((a, b) => (a.date?.seconds || 0) - (b.date?.seconds || 0));
 
@@ -173,16 +172,6 @@ function computeStats(season, games, options = {}) {
     avgPlacing: placings.reduce((total, value) => total + value, 0) / placings.length,
   })).sort((a, b) => b.games - a.games);
 
-  const cameoGames = games.filter(game => game.placements?.some(placement => placement.isCameo));
-  const regularGames = games.filter(game => !game.placements?.some(placement => placement.isCameo));
-  const avgScore = (gameSet) => {
-    const scores = gameSet.flatMap(game => Object.values(pointsForGame(game)));
-    return scores.length ? scores.reduce((total, value) => total + value, 0) / scores.length : 0;
-  };
-  const cameoDelta = cameoGames.length > 0 && regularGames.length > 0
-    ? avgScore(cameoGames) - avgScore(regularGames)
-    : null;
-
   const recentForm = {};
   const streaks = {};
   players.forEach(player => {
@@ -233,9 +222,6 @@ function computeStats(season, games, options = {}) {
     players,
     totalCameoAppearances: cameoPlacements.length,
     cameoRows,
-    cameoDelta,
-    cameoGamesCount: cameoGames.length,
-    regularGamesCount: regularGames.length,
     recentForm,
     streaks,
     projectedRows,
@@ -251,10 +237,6 @@ export default function StatsPage() {
   const { activeSeason: season, seasons, loading: seasonsLoading } = useActiveSeason();
   const { games, loading: gamesLoading } = useGames(season?.id);
   const { games: allGames, loading: allGamesLoading } = useAllGames();
-
-  const seasonById = useMemo(() => (
-    Object.fromEntries((seasons || []).map(item => [item.id, item]))
-  ), [seasons]);
 
   const lifetimePlayers = useMemo(() => {
     const seen = new Set();
@@ -283,7 +265,6 @@ export default function StatsPage() {
     id: 'lifetime',
     name: 'Lifetime',
     regularPlayers: lifetimePlayers,
-    cameoWeight: 0.5,
     startDate: seasons?.at(-1)?.startDate || new Date(),
     endDate: new Date(),
     isActive: true,
@@ -293,11 +274,8 @@ export default function StatsPage() {
   const lifetimeStats = useMemo(() => computeStats(lifetimeSeason, allGames || [], {
     players: lifetimePlayers,
     remainingGames: 0,
-    pointsForGame: (game) => {
-      const sourceSeason = seasonById[game.seasonId];
-      return calculateGamePoints(game.placements || [], sourceSeason?.cameoWeight ?? 0.5);
-    },
-  }), [lifetimeSeason, allGames, lifetimePlayers, seasonById]);
+    pointsForGame: (game) => calculateGamePoints(game.placements || []),
+  }), [lifetimeSeason, allGames, lifetimePlayers]);
 
   const selectedStats = scope === 'lifetime' ? lifetimeStats : seasonStats;
   const selectedSeason = scope === 'lifetime' ? lifetimeSeason : season;
@@ -525,26 +503,14 @@ export default function StatsPage() {
           )}
         </StatCard>
 
-        <StatCard title="Cameo Effect" explanation="Tracks guest players who joined without being in the regular season. The delta compares average regular-player scores in cameo games vs normal games.">
+        <StatCard title="Guest Appearances" explanation="Tracks cameo guests who joined without being in the regular season. Guests keep their finishing place in history, but they do not earn points or change regular-player points.">
           {stats.totalCameoAppearances === 0 ? (
               <StatsInlineEmptyState>No cameo guests have joined {isLifetime ? 'yet' : 'this season yet'}.</StatsInlineEmptyState>
           ) : (
             <>
-              <div className={`cameo-delta-tile ${
-                stats.cameoDelta === null || Math.abs(stats.cameoDelta) < 0.3 ? 'cameo-delta-neutral'
-                  : stats.cameoDelta > 0 ? 'cameo-delta-positive' : 'cameo-delta-negative'
-              }`}>
-                <p className="cameo-delta-title">
-                  {stats.cameoDelta === null ? 'Need a normal game baseline'
-                    : Math.abs(stats.cameoDelta) < 0.3 ? 'Cameos are neutral'
-                      : stats.cameoDelta > 0 ? `+${formatOne(stats.cameoDelta)} pts avg`
-                        : `${formatOne(stats.cameoDelta)} pts avg`}
-                </p>
-                <p className="cameo-delta-subtext">
-                  {stats.cameoDelta === null
-                    ? `${stats.cameoGamesCount} cameo game${stats.cameoGamesCount === 1 ? '' : 's'}, ${stats.regularGamesCount} normal games`
-                    : 'vs. games without guests'}
-                </p>
+              <div className="cameo-delta-tile cameo-delta-neutral">
+                <p className="cameo-delta-title">{stats.totalCameoAppearances} guest appearance{stats.totalCameoAppearances === 1 ? '' : 's'}</p>
+                <p className="cameo-delta-subtext">Guests are ignored for points across every season</p>
               </div>
               <div>
                 {cameoRows.map(row => (
@@ -607,7 +573,7 @@ export default function StatsPage() {
               </div>
             ))}
           </div>
-          <p className="mt-3 text-xs text-[#8E8E93]">{isLifetime ? 'Lifetime uses each game’s original season settings' : 'Projection based on current avg pts/game'}</p>
+          <p className="mt-3 text-xs text-[#8E8E93]">{isLifetime ? 'Lifetime uses the current 5-4-3-2-1 scoring scale' : 'Projection based on current avg pts/game'}</p>
         </StatCard>
       </div>
     </div>

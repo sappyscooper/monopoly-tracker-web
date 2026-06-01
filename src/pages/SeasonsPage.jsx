@@ -62,7 +62,7 @@ function SeasonCard({ season, onLongPress, onDeleteRequest, onSetActive, activat
             </button>
           </div>
         </div>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <div>
             <p className="number-text text-lg font-bold text-white">{games.length}</p>
             <p className="section-label normal-case tracking-normal">games</p>
@@ -70,10 +70,6 @@ function SeasonCard({ season, onLongPress, onDeleteRequest, onSetActive, activat
           <div>
             <p className="number-text text-lg font-bold text-white">{(season.regularPlayers || []).length}</p>
             <p className="section-label normal-case tracking-normal">players</p>
-          </div>
-          <div>
-            <p className="number-text text-lg font-bold text-white">{(season.cameoWeight ?? 0.5).toFixed(1)}×</p>
-            <p className="section-label normal-case tracking-normal">cameo</p>
           </div>
         </div>
         {!season.isActive && (
@@ -106,7 +102,6 @@ function CreateSeasonModal({ onClose, onCreated }) {
   );
   const [players, setPlayers] = useState([...DEFAULT_PLAYERS]);
   const [newPlayer, setNewPlayer] = useState('');
-  const [cameoWeight, setCameoWeight] = useState(0.5);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
   const addInputRef = useRef(null);
@@ -162,7 +157,6 @@ function CreateSeasonModal({ onClose, onCreated }) {
         startDate: new Date(startDate),
         endDate: new Date(endDate),
         regularPlayers: uniquePlayers,
-        cameoWeight,
         isActive: true,
         createdAt: serverTimestamp(),
       });
@@ -229,17 +223,6 @@ function CreateSeasonModal({ onClose, onCreated }) {
           )}
         </section>
 
-        <section>
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <span className="form-section-label !mb-0">Cameo Impact</span>
-            <span className="number-text text-sm font-bold text-[#E8C96A]">{cameoWeight.toFixed(1)}×</span>
-          </div>
-          <input type="range" min="0" max="1" step="0.05" value={cameoWeight}
-            onChange={e => setCameoWeight(parseFloat(e.target.value))}
-            className="w-full accent-[#E8C96A]" />
-          <p className="hint-text">Guests slightly affect scores</p>
-        </section>
-
         <section className="space-y-3">
           <button onClick={handleCreate} disabled={saving}
             className="primary-button disabled:opacity-50">
@@ -255,7 +238,7 @@ function CreateSeasonModal({ onClose, onCreated }) {
 function EndSeasonModal({ season, onClose, onConfirm }) {
   const { games } = useGames(season?.id);
   const [confirming, setConfirming] = useState(false);
-  const standings = seasonLeaderboard(games || [], season?.regularPlayers || [], season?.cameoWeight ?? 0.5).slice(0, 3);
+  const standings = seasonLeaderboard(games || [], season?.regularPlayers || []).slice(0, 3);
   const handleConfirm = async () => {
     setConfirming(true);
     await onConfirm(season);
