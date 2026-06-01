@@ -602,6 +602,34 @@ button:disabled {
   white-space: nowrap;
 }
 
+.guest-suggestion-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.guest-suggestion-chip {
+  max-width: 100%;
+  min-height: 34px;
+  border: 1px solid rgba(232,201,106,0.22);
+  border-radius: 999px;
+  background: rgba(232,201,106,0.08);
+  color: var(--gold);
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 750;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.guest-suggestion-chip:disabled {
+  border-color: rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.04);
+  color: var(--text-faint);
+}
+
 .hint-text {
   margin-top: 8px;
   color: var(--text-muted);

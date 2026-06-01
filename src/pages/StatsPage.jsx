@@ -5,6 +5,7 @@ import { useActiveSeason } from '../hooks/useActiveSeason';
 import { useAllGames } from '../hooks/useAllGames';
 import { useGames } from '../hooks/useGames';
 import { POINT_SCALE_LABEL, calculateGamePoints, formatPoints } from '../utils/scoring';
+import { cleanParticipantName, normalizeParticipantName } from '../utils/gameForm';
 import GlassCard from '../components/GlassCard';
 import EmptyState from '../components/EmptyState';
 import Sheet from '../components/Sheet';
@@ -163,10 +164,13 @@ function computeStats(season, games, options = {}) {
   const cameoPlacements = games.flatMap(game => (game.placements || []).filter(placement => placement.isCameo));
   const cameoByPlayer = {};
   cameoPlacements.forEach(placement => {
-    if (!cameoByPlayer[placement.player]) cameoByPlayer[placement.player] = [];
-    cameoByPlayer[placement.player].push(placement.placing);
+    const name = cleanParticipantName(placement.player);
+    const key = normalizeParticipantName(name);
+    if (!key) return;
+    if (!cameoByPlayer[key]) cameoByPlayer[key] = { name, placings: [] };
+    cameoByPlayer[key].placings.push(placement.placing);
   });
-  const cameoRows = Object.entries(cameoByPlayer).map(([name, placings]) => ({
+  const cameoRows = Object.values(cameoByPlayer).map(({ name, placings }) => ({
     name,
     games: placings.length,
     avgPlacing: placings.reduce((total, value) => total + value, 0) / placings.length,

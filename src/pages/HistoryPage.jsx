@@ -1,18 +1,217 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
-import { doc, deleteDoc } from 'firebase/firestore';
+import { ChevronDown, ChevronUp, Pencil, Trash2 } from 'lucide-react';
+import {
+  DndContext, closestCenter, KeyboardSensor, PointerSensor,
+  useSensor, useSensors, TouchSensor
+} from '@dnd-kit/core';
+import {
+  arrayMove, SortableContext, sortableKeyboardCoordinates,
+  verticalListSortingStrategy
+} from '@dnd-kit/sortable';
+import { doc, deleteDoc, serverTimestamp, Timestamp, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useActiveSeason } from '../hooks/useActiveSeason';
 import { useGames } from '../hooks/useGames';
 import { calculateGamePoints, formatPoints } from '../utils/scoring';
+import {
+  buildPlacementsFromEntries,
+  canonicalParticipantName,
+  collectCameoNames,
+  gameDateInputValue,
+  makeGameEntries,
+  normalizeParticipantName,
+} from '../utils/gameForm';
+import { AbsentRow, PlayerRow } from '../components/GamePlacementRows';
 import GlassCard from '../components/GlassCard';
 import EmptyState from '../components/EmptyState';
 import Sheet from '../components/Sheet';
 
-function GameRow({ game, season }) {
+function EditGameSheet({ game, season, games, onClose }) {
+  const [gameDate, setGameDate] = useState(gameDateInputValue(game));
+  const [entries, setEntries] = useState(() => makeGameEntries(season, game));
+  const [cameoInput, setCameoInput] = useState('');
+  const [saving, setSaving] = useState(false);
+  const guestSuggestions = useMemo(() => collectCameoNames(games), [games]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 120, tolerance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const rankedEntries = entries.filter(entry => !entry.isAbsent);
+  const activeRegulars = entries.filter(entry => !entry.isCameo && !entry.isAbsent);
+  const absentRegulars = entries.filter(entry => !entry.isCameo && entry.isAbsent);
+  const placements = buildPlacementsFromEntries(entries);
+  const scores = calculateGamePoints(placements);
+  const canSave = activeRegulars.length >= 2 && !saving;
+
+  const handleDragEnd = ({ active, over }) => {
+    if (!over || active.id === over.id) return;
+    const oldIndex = rankedEntries.findIndex(entry => entry.id === active.id);
+    const newIndex = rankedEntries.findIndex(entry => entry.id === over.id);
+    if (oldIndex < 0 || newIndex < 0) return;
+    const reorderedRanked = arrayMove(rankedEntries, oldIndex, newIndex);
+    setEntries([...reorderedRanked, ...absentRegulars]);
+  };
+
+  const toggleAbsent = (id) => {
+    setEntries(prev => {
+      const target = prev.find(entry => entry.id === id);
+      if (!target || target.isCameo) return prev;
+      const rest = prev.filter(entry => entry.id !== id);
+      const updated = { ...target, isAbsent: !target.isAbsent };
+      const active = rest.filter(entry => !entry.isAbsent);
+      const absent = rest.filter(entry => !entry.isCameo && entry.isAbsent);
+      return updated.isAbsent ? [...active, ...absent, updated] : [...active, updated, ...absent];
+    });
+  };
+
+  const addCameo = (name = cameoInput) => {
+    const player = canonicalParticipantName(name, guestSuggestions);
+    if (!player) return;
+    const taken = entries.some(entry => normalizeParticipantName(entry.player) === normalizeParticipantName(player));
+    if (taken) {
+      setCameoInput('');
+      return;
+    }
+    setEntries(prev => [
+      ...prev.filter(entry => !entry.isAbsent),
+      { id: `cameo-${Date.now()}-${player}`, player, isCameo: true, isAbsent: false },
+      ...prev.filter(entry => !entry.isCameo && entry.isAbsent),
+    ]);
+    setCameoInput('');
+  };
+
+  const removeCameo = (id) => setEntries(prev => prev.filter(entry => entry.id !== id));
+
+  const handleSave = async () => {
+    if (!canSave) return;
+    setSaving(true);
+    try {
+      await updateDoc(doc(db, 'games', game.id), {
+        date: Timestamp.fromDate(new Date(`${gameDate}T12:00:00`)),
+        placements,
+        updatedAt: serverTimestamp(),
+      });
+      onClose();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Sheet open title="Edit Game" subtitle="Adjust the date, finishing order, absences, and guests." onClose={onClose}>
+      <div className="form-stack">
+        <section>
+          <label className="form-section-label">Game Date</label>
+          <input type="date" className="control" value={gameDate} onChange={event => setGameDate(event.target.value)} />
+        </section>
+
+        <section>
+          <p className="section-label">Finishing Order</p>
+          <p className="section-subtext">Drag regulars and guests together. Guests are skipped for points.</p>
+          <div className="mt-3">
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={rankedEntries.map(entry => entry.id)} strategy={verticalListSortingStrategy}>
+                {rankedEntries.map((entry, index) => (
+                  <PlayerRow
+                    key={entry.id}
+                    entry={entry}
+                    placing={index + 1}
+                    onToggleAbsent={toggleAbsent}
+                    onRemoveCameo={removeCameo}
+                  />
+                ))}
+              </SortableContext>
+            </DndContext>
+            {absentRegulars.map(entry => (
+              <AbsentRow key={entry.id} entry={entry} onToggleAbsent={toggleAbsent} />
+            ))}
+          </div>
+        </section>
+
+        <section>
+          <p className="section-label">Cameo Guests</p>
+          <p className="section-subtext">Reuse a previous guest name to keep Stats grouped correctly.</p>
+          <div className="mt-3">
+            <div className="compact-add-row">
+              <input
+                value={cameoInput}
+                onChange={event => setCameoInput(event.target.value)}
+                onKeyDown={event => event.key === 'Enter' && addCameo()}
+                placeholder="+ Add Guest Name..."
+                className="control"
+              />
+              <button onClick={() => addCameo()} disabled={!cameoInput.trim()} className="small-pill-button disabled:opacity-50">Add</button>
+            </div>
+            {guestSuggestions.length > 0 && (
+              <div className="guest-suggestion-row">
+                {guestSuggestions.map(name => {
+                  const alreadyAdded = entries.some(entry => normalizeParticipantName(entry.player) === normalizeParticipantName(name));
+                  return (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => addCameo(name)}
+                      disabled={alreadyAdded}
+                      className="guest-suggestion-chip"
+                    >
+                      {name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section>
+          <p className="section-label mb-3">Score Preview</p>
+          <GlassCard>
+            {placements.map(placement => (
+              <div key={`${placement.player}-${placement.placing}`} className="score-row">
+                <div className="min-w-0">
+                  <p className={`truncate text-sm font-medium ${placement.isCameo ? 'text-[#E8C96A]' : placement.isAbsent ? 'text-[#8E8E93]' : 'text-white'}`}>
+                    {placement.player}
+                  </p>
+                  {placement.isAbsent && <p className="text-xs font-semibold text-[#E07B6A]">(absent - last place)</p>}
+                </div>
+                <div className="number-text shrink-0 text-right text-sm font-bold">
+                  {placement.isCameo ? (
+                    <span className="rounded-full bg-[#E8C96A]/15 px-2 py-1 text-xs text-[#E8C96A]">Guest</span>
+                  ) : (
+                    <span className={placement.isAbsent ? 'text-[#8E8E93]' : 'text-white'}>
+                      {formatPoints(scores[placement.player] ?? 0)} pts
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+            {activeRegulars.length < 2 && (
+              <p className="inline-error">Need at least 2 active regular players</p>
+            )}
+          </GlassCard>
+        </section>
+
+        <div className="space-y-3">
+          <button onClick={handleSave} disabled={!canSave} className="primary-button disabled:opacity-50">
+            {saving ? 'Saving...' : 'Save Changes'}
+          </button>
+          <button onClick={onClose} className="secondary-button">Cancel</button>
+        </div>
+      </div>
+    </Sheet>
+  );
+}
+
+function GameRow({ game, season, games }) {
   const [expanded, setExpanded] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [deleteRevealed, setDeleteRevealed] = useState(false);
   const [touchStartX, setTouchStartX] = useState(null);
 
@@ -73,6 +272,8 @@ function GameRow({ game, season }) {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <button onClick={e => { e.stopPropagation(); setEditing(true); }}
+              className="icon-button !min-h-9 !min-w-9 rounded-xl bg-[#6EB5D4]/15 text-[#6EB5D4]" aria-label="Edit game"><Pencil size={15} /></button>
             <button onClick={e => { e.stopPropagation(); setDeleteConfirm(true); }}
               className="icon-button !min-h-9 !min-w-9 rounded-xl bg-[#E07B6A]/15 text-[#E07B6A]" aria-label="Delete game"><Trash2 size={15} /></button>
             {expanded ? <ChevronUp size={18} className="text-[#8E8E93]" /> : <ChevronDown size={18} className="text-[#8E8E93]" />}
@@ -112,6 +313,14 @@ function GameRow({ game, season }) {
           <button onClick={() => setDeleteConfirm(false)} className="secondary-button">Cancel</button>
         </div>
       </Sheet>
+      {editing && (
+        <EditGameSheet
+          game={game}
+          season={season}
+          games={games}
+          onClose={() => setEditing(false)}
+        />
+      )}
     </div>
   );
 }
@@ -157,7 +366,7 @@ export default function HistoryPage() {
             <div key={month}>
               <p className="section-label mb-3">{month}</p>
               <div className="space-y-2">
-                {monthGames.map(g => <GameRow key={g.id} game={g} season={season} />)}
+                {monthGames.map(g => <GameRow key={g.id} game={g} season={season} games={games || []} />)}
               </div>
             </div>
           ))}

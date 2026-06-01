@@ -1,30 +1,31 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { CalendarDays, GripVertical, Star } from 'lucide-react';
+import { CalendarDays } from 'lucide-react';
 import {
   DndContext, closestCenter, KeyboardSensor, PointerSensor,
   useSensor, useSensors, TouchSensor
 } from '@dnd-kit/core';
 import {
   arrayMove, SortableContext, sortableKeyboardCoordinates,
-  useSortable, verticalListSortingStrategy
+  verticalListSortingStrategy
 } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import { collection, addDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useActiveSeason } from '../hooks/useActiveSeason';
+import { useGames } from '../hooks/useGames';
 import { calculateGamePoints, formatPoints } from '../utils/scoring';
+import {
+  buildPlacementsFromEntries,
+  canonicalParticipantName,
+  collectCameoNames,
+  makeSeasonEntries,
+  normalizeParticipantName,
+} from '../utils/gameForm';
+import { AbsentRow, PlayerRow } from '../components/GamePlacementRows';
 import GlassCard from '../components/GlassCard';
 import EmptyState from '../components/EmptyState';
 import Sheet from '../components/Sheet';
-
-function positionClass(placing) {
-  if (placing === 1) return 'pos-1';
-  if (placing === 2) return 'pos-2';
-  if (placing === 3) return 'pos-3';
-  return 'pos-other';
-}
 
 function DateSheet({ value, onChange, onClose }) {
   return (
@@ -40,49 +41,9 @@ function DateSheet({ value, onChange, onClose }) {
   );
 }
 
-function PlayerRow({ entry, placing, onToggleAbsent, onRemoveCameo }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: entry.id });
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
-
-  return (
-    <div ref={setNodeRef} style={style} className={`player-row ${entry.isCameo ? 'cameo' : ''} ${isDragging ? 'dragging' : ''}`}>
-      <button {...attributes} {...listeners} className="drag-handle" aria-label={`Drag ${entry.player}`}>
-        <GripVertical size={18} />
-      </button>
-      <div className={`pos-badge ${positionClass(placing)}`}>{placing}</div>
-      <div className={`player-name ${entry.isCameo ? 'text-[#E8C96A]' : ''}`}>
-        {entry.player}
-        {entry.isCameo && (
-          <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-[#E8C96A]/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] text-[#E8C96A]">
-            <Star size={10} fill="currentColor" /> Guest
-          </span>
-        )}
-      </div>
-      {entry.isCameo ? (
-        <button className="remove-cameo" onClick={() => onRemoveCameo(entry.id)} aria-label={`Remove ${entry.player}`}>×</button>
-      ) : (
-        <button onClick={() => onToggleAbsent(entry.id)} className="absent-toggle">Absent</button>
-      )}
-    </div>
-  );
-}
-
-function AbsentRow({ entry, onToggleAbsent }) {
-  return (
-    <div className="player-row absent">
-      <div className="drag-handle" aria-hidden="true" />
-      <div className="pos-badge pos-absent">Last Place</div>
-      <div className="player-name text-[#8E8E93]">{entry.player}</div>
-      <button onClick={() => onToggleAbsent(entry.id)} className="absent-toggle active">Absent</button>
-    </div>
-  );
-}
-
 export default function LogGamePage() {
   const { activeSeason: season } = useActiveSeason();
+  const { games: previousGames } = useGames(season?.id);
   const [gameDate, setGameDate] = useState(new Date().toISOString().split('T')[0]);
   const [entries, setEntries] = useState([]);
   const [cameoInput, setCameoInput] = useState('');
@@ -93,14 +54,11 @@ export default function LogGamePage() {
 
   useEffect(() => {
     if (season) {
-      setEntries((season.regularPlayers || []).map((player, index) => ({
-        id: `regular-${index}-${player}`,
-        player,
-        isCameo: false,
-        isAbsent: false,
-      })));
+      setEntries(makeSeasonEntries(season));
     }
   }, [season?.id]);
+
+  const guestSuggestions = useMemo(() => collectCameoNames(previousGames), [previousGames]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -133,10 +91,10 @@ export default function LogGamePage() {
     });
   };
 
-  const addCameo = () => {
-    const player = cameoInput.trim();
+  const addCameo = (name = cameoInput) => {
+    const player = canonicalParticipantName(name, guestSuggestions);
     if (!player) return;
-    const taken = entries.some(entry => entry.player.toLowerCase() === player.toLowerCase());
+    const taken = entries.some(entry => normalizeParticipantName(entry.player) === normalizeParticipantName(player));
     if (taken) {
       setCameoInput('');
       return;
@@ -152,31 +110,12 @@ export default function LogGamePage() {
 
   const removeCameo = (id) => setEntries(prev => prev.filter(entry => entry.id !== id));
 
-  const buildPlacements = () => {
-    const placements = [];
-    let placing = 1;
-    rankedEntries.forEach(entry => {
-      placements.push({ player: entry.player, placing, isCameo: entry.isCameo, isAbsent: false });
-      placing++;
-    });
-    absentRegulars.forEach(entry => {
-      placements.push({ player: entry.player, placing, isCameo: false, isAbsent: true });
-      placing++;
-    });
-    return placements;
-  };
-
-  const placements = buildPlacements();
+  const placements = buildPlacementsFromEntries(entries);
   const scores = season ? calculateGamePoints(placements) : {};
   const canSubmit = activeRegulars.length >= 2 && !saving;
 
   const resetForm = () => {
-    setEntries((season?.regularPlayers || []).map((player, index) => ({
-      id: `regular-${index}-${player}-${Date.now()}`,
-      player,
-      isCameo: false,
-      isAbsent: false,
-    })));
+    setEntries(makeSeasonEntries(season).map(entry => ({ ...entry, id: `${entry.id}-${Date.now()}` })));
     setCameoInput('');
   };
 
@@ -268,9 +207,27 @@ export default function LogGamePage() {
                 onKeyDown={event => event.key === 'Enter' && addCameo()}
                 placeholder="+ Add Guest Name..."
                 className="control" />
-              <button onClick={addCameo} disabled={!cameoInput.trim()}
+              <button onClick={() => addCameo()} disabled={!cameoInput.trim()}
                 className="small-pill-button disabled:opacity-50">Add</button>
             </div>
+            {guestSuggestions.length > 0 && (
+              <div className="guest-suggestion-row">
+                {guestSuggestions.map(name => {
+                  const alreadyAdded = entries.some(entry => normalizeParticipantName(entry.player) === normalizeParticipantName(name));
+                  return (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => addCameo(name)}
+                      disabled={alreadyAdded}
+                      className="guest-suggestion-chip"
+                    >
+                      {name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </section>
 
