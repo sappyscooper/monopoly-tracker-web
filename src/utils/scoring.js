@@ -1,11 +1,15 @@
-export const BASE_POINTS = { 1: 10, 2: 7, 3: 5, 4: 3, 5: 1 };
+export const BASE_POINTS = { 1: 5, 2: 4, 3: 3, 4: 2, 5: 1 };
+
+function pointsForPlace(place) {
+  return BASE_POINTS[place] ?? BASE_POINTS[5];
+}
 
 export function interpolatedPoints(effectivePlacing) {
   const lower = Math.floor(effectivePlacing);
   const upper = Math.ceil(effectivePlacing);
   const fraction = effectivePlacing - lower;
-  const pLow = BASE_POINTS[lower] ?? 0;
-  const pHigh = BASE_POINTS[upper] ?? 0;
+  const pLow = pointsForPlace(lower);
+  const pHigh = pointsForPlace(upper);
   return pLow - (pLow - pHigh) * fraction;
 }
 
