@@ -4,7 +4,7 @@ import { Info } from 'lucide-react';
 import { useActiveSeason } from '../hooks/useActiveSeason';
 import { useAllGames } from '../hooks/useAllGames';
 import { useGames } from '../hooks/useGames';
-import { calculateGamePoints, formatPoints } from '../utils/scoring';
+import { POINT_SCALE_LABEL, calculateGamePoints, formatPoints } from '../utils/scoring';
 import GlassCard from '../components/GlassCard';
 import EmptyState from '../components/EmptyState';
 import Sheet from '../components/Sheet';
@@ -503,14 +503,14 @@ export default function StatsPage() {
           )}
         </StatCard>
 
-        <StatCard title="Guest Appearances" explanation="Tracks cameo guests who joined without being in the regular season. Guests keep their finishing place in history, but they do not earn points or change regular-player points.">
+        <StatCard title="Guest Appearances" explanation="Tracks cameo guests who joined without being in the regular season. Point sliding skips guests for scoring, so regular players are ranked only against each other and slide up to claim the available points.">
           {stats.totalCameoAppearances === 0 ? (
               <StatsInlineEmptyState>No cameo guests have joined {isLifetime ? 'yet' : 'this season yet'}.</StatsInlineEmptyState>
           ) : (
             <>
               <div className="cameo-delta-tile cameo-delta-neutral">
                 <p className="cameo-delta-title">{stats.totalCameoAppearances} guest appearance{stats.totalCameoAppearances === 1 ? '' : 's'}</p>
-                <p className="cameo-delta-subtext">Guests are ignored for points across every season</p>
+                <p className="cameo-delta-subtext">Guests are skipped for points; regular players slide up</p>
               </div>
               <div>
                 {cameoRows.map(row => (
@@ -573,7 +573,7 @@ export default function StatsPage() {
               </div>
             ))}
           </div>
-          <p className="mt-3 text-xs text-[#8E8E93]">{isLifetime ? 'Lifetime uses the current 5-4-3-2-1 scoring scale' : 'Projection based on current avg pts/game'}</p>
+          <p className="mt-3 text-xs text-[#8E8E93]">{isLifetime ? `Lifetime uses the current ${POINT_SCALE_LABEL} scoring scale` : 'Projection based on current avg pts/game'}</p>
         </StatCard>
       </div>
     </div>

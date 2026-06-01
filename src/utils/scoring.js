@@ -1,4 +1,5 @@
-export const BASE_POINTS = { 1: 5, 2: 4, 3: 3, 4: 2, 5: 1 };
+export const BASE_POINTS = { 1: 8, 2: 5, 3: 3, 4: 2, 5: 1 };
+export const POINT_SCALE_LABEL = '8-5-3-2-1';
 
 function pointsForPlace(place) {
   return BASE_POINTS[place] ?? BASE_POINTS[5];

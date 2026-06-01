@@ -260,7 +260,7 @@ export default function LogGamePage() {
 
         <section className="mt-5">
           <p className="section-label">Cameo Guests</p>
-          <p className="section-subtext">Guests keep their place in the order but never earn or change points.</p>
+          <p className="section-subtext">Point sliding is on: guests keep their place in history, but regular players slide up for points.</p>
           <div className="mt-3">
             <div className="compact-add-row">
               <input ref={cameoInputRef} value={cameoInput}
