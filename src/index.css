@@ -647,6 +647,11 @@ button:disabled {
   z-index: 20;
 }
 
+.player-row.cameo {
+  background: rgba(232,201,106,0.06);
+  border-color: rgba(232,201,106,0.18);
+}
+
 .player-row.absent {
   opacity: 0.5;
 }

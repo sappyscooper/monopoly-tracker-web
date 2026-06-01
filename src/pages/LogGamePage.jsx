@@ -40,7 +40,7 @@ function DateSheet({ value, onChange, onClose }) {
   );
 }
 
-function RegularRow({ entry, placing, onToggleAbsent }) {
+function PlayerRow({ entry, placing, onToggleAbsent, onRemoveCameo }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: entry.id });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -48,13 +48,24 @@ function RegularRow({ entry, placing, onToggleAbsent }) {
   };
 
   return (
-    <div ref={setNodeRef} style={style} className={`player-row ${isDragging ? 'dragging' : ''}`}>
+    <div ref={setNodeRef} style={style} className={`player-row ${entry.isCameo ? 'cameo' : ''} ${isDragging ? 'dragging' : ''}`}>
       <button {...attributes} {...listeners} className="drag-handle" aria-label={`Drag ${entry.player}`}>
         <GripVertical size={18} />
       </button>
       <div className={`pos-badge ${positionClass(placing)}`}>{placing}</div>
-      <div className="player-name">{entry.player}</div>
-      <button onClick={() => onToggleAbsent(entry.id)} className="absent-toggle">Absent</button>
+      <div className={`player-name ${entry.isCameo ? 'text-[#E8C96A]' : ''}`}>
+        {entry.player}
+        {entry.isCameo && (
+          <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-[#E8C96A]/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] text-[#E8C96A]">
+            <Star size={10} fill="currentColor" /> Guest
+          </span>
+        )}
+      </div>
+      {entry.isCameo ? (
+        <button className="remove-cameo" onClick={() => onRemoveCameo(entry.id)} aria-label={`Remove ${entry.player}`}>×</button>
+      ) : (
+        <button onClick={() => onToggleAbsent(entry.id)} className="absent-toggle">Absent</button>
+      )}
     </div>
   );
 }
@@ -70,21 +81,10 @@ function AbsentRow({ entry, onToggleAbsent }) {
   );
 }
 
-function CameoRow({ guest, onRemove }) {
-  return (
-    <div className="cameo-row">
-      <div className="cameo-star"><Star size={17} fill="currentColor" /></div>
-      <div className="player-name text-[#E8C96A]">{guest.player}</div>
-      <button className="remove-cameo" onClick={() => onRemove(guest.id)} aria-label={`Remove ${guest.player}`}>×</button>
-    </div>
-  );
-}
-
 export default function LogGamePage() {
   const { activeSeason: season } = useActiveSeason();
   const [gameDate, setGameDate] = useState(new Date().toISOString().split('T')[0]);
-  const [regularEntries, setRegularEntries] = useState([]);
-  const [cameos, setCameos] = useState([]);
+  const [entries, setEntries] = useState([]);
   const [cameoInput, setCameoInput] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -93,12 +93,12 @@ export default function LogGamePage() {
 
   useEffect(() => {
     if (season) {
-      setRegularEntries((season.regularPlayers || []).map((player, index) => ({
+      setEntries((season.regularPlayers || []).map((player, index) => ({
         id: `regular-${index}-${player}`,
         player,
+        isCameo: false,
         isAbsent: false,
       })));
-      setCameos([]);
     }
   }, [season?.id]);
 
@@ -108,26 +108,27 @@ export default function LogGamePage() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  const activeRegulars = regularEntries.filter(entry => !entry.isAbsent);
-  const absentRegulars = regularEntries.filter(entry => entry.isAbsent);
+  const rankedEntries = entries.filter(entry => !entry.isAbsent);
+  const activeRegulars = entries.filter(entry => !entry.isCameo && !entry.isAbsent);
+  const absentRegulars = entries.filter(entry => !entry.isCameo && entry.isAbsent);
 
   const handleDragEnd = ({ active, over }) => {
     if (!over || active.id === over.id) return;
-    const oldIndex = activeRegulars.findIndex(entry => entry.id === active.id);
-    const newIndex = activeRegulars.findIndex(entry => entry.id === over.id);
+    const oldIndex = rankedEntries.findIndex(entry => entry.id === active.id);
+    const newIndex = rankedEntries.findIndex(entry => entry.id === over.id);
     if (oldIndex < 0 || newIndex < 0) return;
-    const reorderedActive = arrayMove(activeRegulars, oldIndex, newIndex);
-    setRegularEntries([...reorderedActive, ...absentRegulars]);
+    const reorderedRanked = arrayMove(rankedEntries, oldIndex, newIndex);
+    setEntries([...reorderedRanked, ...absentRegulars]);
   };
 
   const toggleAbsent = (id) => {
-    setRegularEntries(prev => {
+    setEntries(prev => {
       const target = prev.find(entry => entry.id === id);
-      if (!target) return prev;
+      if (!target || target.isCameo) return prev;
       const rest = prev.filter(entry => entry.id !== id);
       const updated = { ...target, isAbsent: !target.isAbsent };
       const active = rest.filter(entry => !entry.isAbsent);
-      const absent = rest.filter(entry => entry.isAbsent);
+      const absent = rest.filter(entry => !entry.isCameo && entry.isAbsent);
       return updated.isAbsent ? [...active, ...absent, updated] : [...active, updated, ...absent];
     });
   };
@@ -135,27 +136,27 @@ export default function LogGamePage() {
   const addCameo = () => {
     const player = cameoInput.trim();
     if (!player) return;
-    const taken = [...regularEntries, ...cameos].some(entry => entry.player.toLowerCase() === player.toLowerCase());
+    const taken = entries.some(entry => entry.player.toLowerCase() === player.toLowerCase());
     if (taken) {
       setCameoInput('');
       return;
     }
-    setCameos(prev => [...prev, { id: `cameo-${Date.now()}-${player}`, player }]);
+    setEntries(prev => [
+      ...prev.filter(entry => !entry.isAbsent),
+      { id: `cameo-${Date.now()}-${player}`, player, isCameo: true, isAbsent: false },
+      ...prev.filter(entry => !entry.isCameo && entry.isAbsent),
+    ]);
     setCameoInput('');
     requestAnimationFrame(() => cameoInputRef.current?.focus());
   };
 
-  const removeCameo = (id) => setCameos(prev => prev.filter(guest => guest.id !== id));
+  const removeCameo = (id) => setEntries(prev => prev.filter(entry => entry.id !== id));
 
   const buildPlacements = () => {
     const placements = [];
     let placing = 1;
-    activeRegulars.forEach(entry => {
-      placements.push({ player: entry.player, placing, isCameo: false, isAbsent: false });
-      placing++;
-    });
-    cameos.forEach(guest => {
-      placements.push({ player: guest.player, placing, isCameo: true, isAbsent: false });
+    rankedEntries.forEach(entry => {
+      placements.push({ player: entry.player, placing, isCameo: entry.isCameo, isAbsent: false });
       placing++;
     });
     absentRegulars.forEach(entry => {
@@ -170,12 +171,12 @@ export default function LogGamePage() {
   const canSubmit = activeRegulars.length >= 2 && !saving;
 
   const resetForm = () => {
-    setRegularEntries((season?.regularPlayers || []).map((player, index) => ({
+    setEntries((season?.regularPlayers || []).map((player, index) => ({
       id: `regular-${index}-${player}-${Date.now()}`,
       player,
+      isCameo: false,
       isAbsent: false,
     })));
-    setCameos([]);
     setCameoInput('');
   };
 
@@ -235,13 +236,19 @@ export default function LogGamePage() {
       <div className="page-inner">
         <section>
           <p className="section-label">Finishing Order</p>
-          <p className="section-subtext">Drag to reorder. Top = 1st place.</p>
+          <p className="section-subtext">Drag regulars and guests together. Top = 1st place.</p>
 
           <div className="mt-3">
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-              <SortableContext items={activeRegulars.map(entry => entry.id)} strategy={verticalListSortingStrategy}>
-                {activeRegulars.map((entry, index) => (
-                  <RegularRow key={entry.id} entry={entry} placing={index + 1} onToggleAbsent={toggleAbsent} />
+              <SortableContext items={rankedEntries.map(entry => entry.id)} strategy={verticalListSortingStrategy}>
+                {rankedEntries.map((entry, index) => (
+                  <PlayerRow
+                    key={entry.id}
+                    entry={entry}
+                    placing={index + 1}
+                    onToggleAbsent={toggleAbsent}
+                    onRemoveCameo={removeCameo}
+                  />
                 ))}
               </SortableContext>
             </DndContext>
@@ -253,9 +260,8 @@ export default function LogGamePage() {
 
         <section className="mt-5">
           <p className="section-label">Cameo Guests</p>
-          <p className="section-subtext">Guests affect scores but don't count in standings.</p>
+          <p className="section-subtext">Added guests appear in finishing order so you can rank their place.</p>
           <div className="mt-3">
-            {cameos.map(guest => <CameoRow key={guest.id} guest={guest} onRemove={removeCameo} />)}
             <div className="compact-add-row">
               <input ref={cameoInputRef} value={cameoInput}
                 onChange={event => setCameoInput(event.target.value)}
