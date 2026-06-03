@@ -1,53 +1,10 @@
-import { useCallback, useState } from 'react';
+// Simple module-level session flag. It survives component remounts but resets on refresh or a new tab.
+let _unlocked = false;
 
-let sessionAuthenticated = false;
+export function isUnlocked() {
+  return _unlocked;
+}
 
-const ADMIN_PASSWORD = 'thedegens';
-
-export function useAdminAuth() {
-  const [isAuthenticated, setIsAuthenticated] = useState(sessionAuthenticated);
-  const [showPasswordModal, setShowPasswordModal] = useState(false);
-  const [pendingAction, setPendingAction] = useState(null);
-  const [error, setError] = useState('');
-
-  const requireAuth = useCallback((action) => {
-    if (sessionAuthenticated) {
-      action();
-      return;
-    }
-
-    setPendingAction(() => action);
-    setShowPasswordModal(true);
-    setError('');
-  }, []);
-
-  const submitPassword = useCallback((password) => {
-    if (password === ADMIN_PASSWORD) {
-      sessionAuthenticated = true;
-      setIsAuthenticated(true);
-      setShowPasswordModal(false);
-      setError('');
-      if (pendingAction) {
-        pendingAction();
-        setPendingAction(null);
-      }
-    } else {
-      setError('Wrong password. Try again, degenerate.');
-    }
-  }, [pendingAction]);
-
-  const dismissModal = useCallback(() => {
-    setShowPasswordModal(false);
-    setPendingAction(null);
-    setError('');
-  }, []);
-
-  return {
-    isAuthenticated,
-    showPasswordModal,
-    error,
-    requireAuth,
-    submitPassword,
-    dismissModal,
-  };
+export function unlock() {
+  _unlocked = true;
 }

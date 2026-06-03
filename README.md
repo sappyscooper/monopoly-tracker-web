@@ -30,7 +30,7 @@
 - **The Sacred Rules Bible** — A custom in-app rule book with an animated leather tome UI, Roman numeral chapters, page-turn animations, and the ability to add, edit, and remove custom house rules stored in Firestore.
 - **Installable PWA** — Add to home screen on iOS or Android for a native-feeling app experience with no App Store required.
 - **Dark mode** — Fully dark, premium mobile-first UI with a restrained champagne gold, ice blue, and coral rose accent palette.
-- **Admin password gate** — Write actions are protected by a shared session password, keeping casual public visitors read-only while trusted players can update the season.
+- **Site-wide password gate** — The full app is blocked behind a shared session password, then stays interruption-free once unlocked for that browser session.
 
 ***
 
@@ -107,7 +107,7 @@ export const db = getFirestore(app);
 
 ### 4. Set up Firestore Security Rules
 
-For the simplest friend-group deployment, Firestore can be configured as publicly readable and writable while the app UI protects write actions with the session password gate:
+For the simplest friend-group deployment, Firestore can be configured as publicly readable and writable while the app UI protects the entire app with a session password gate:
 
 ```txt
 rules_version = '2';
@@ -121,11 +121,11 @@ service cloud.firestore {
 }
 ```
 
-> **Security note:** The admin password gate is client-side convenience protection, not a substitute for backend authorization. It is suitable for a small trusted group where the app is public to browse but writes should be socially gated. For sensitive or high-traffic deployments, add Firebase Authentication and restrictive Firestore rules.
+> **Note:** This app uses a site-wide session password gate. The app is not accessible without the password, which resets on each new browser session (new tab or page refresh). Write actions require no additional authentication once inside. For production use with multiple teams, consider replacing this with Firebase Authentication.
 
-### 5. Configure your players and admin password
+### 5. Configure your players and site password
 
-Open `src/hooks/useAdminAuth.js` and set your admin password:
+Open `src/components/SitePasswordGate.jsx` and set your password:
 
 ```js
 const ADMIN_PASSWORD = 'your-password-here';
@@ -209,14 +209,14 @@ Absent regular players are appended to the end of the game and receive the lowes
 ```txt
 src/
 ├── components/              # Reusable UI components
-│   ├── AdminPasswordModal.jsx
 │   ├── BibleFAB.jsx
 │   ├── BottomNav.jsx
 │   ├── GamePlacementRows.jsx
 │   ├── GlassCard.jsx
+│   ├── SitePasswordGate.jsx
 │   └── ...
 ├── hooks/                   # Custom React hooks
-│   ├── useAdminAuth.js      # Session-based write protection
+│   ├── useAdminAuth.js      # Module-level site gate session state
 │   ├── useAllGames.js       # Firestore all-games listener
 │   ├── useGames.js          # Firestore games listener for one season
 │   ├── useRules.js          # Firestore rules listener and rule mutations
