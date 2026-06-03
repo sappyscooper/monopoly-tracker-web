@@ -40,7 +40,7 @@
 
 | Leaderboard | Log Game | Stats Dashboard | The Bible |
 |:----------:|:---------:|:---------------:|:---------:|
-| <img src="docs/screenshots/leaderboard.png" width="200" alt="Leaderboard"> | <img src="docs/screenshots/log-game.png" width="200" alt="Log Game"> | <img src="docs/screenshots/stats.png" width="200" alt="Stats Dashboard"> | <img src="docs/screenshots/bible.png" width="200" alt="The Bible"> |
+| <img src="docs/screenshots/leaderboard.jpg.jpeg" width="200" alt="Leaderboard"> | <img src="docs/screenshots/log-game.jpg.jpeg" width="200" alt="Log Game"> | <img src="docs/screenshots/stats.jpg.jpeg" width="200" alt="Stats Dashboard"> | <img src="docs/screenshots/bible.jpg.jpeg" width="200" alt="The Bible"> |
 
 ***
 
