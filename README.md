@@ -39,8 +39,8 @@
 > _Screenshots taken on mobile — live demo at [monopoly-tracker-web.vercel.app](https://monopoly-tracker-web.vercel.app)._
 
 | Leaderboard | Log Game | Stats Dashboard | The Bible |
-|:-----------:|:--------:|:---------------:|:---------:|
-| ![Leaderboard](docs/screenshots/leaderboard.png) | ![Log Game](docs/screenshots/log-game.png) | ![Stats Dashboard](docs/screenshots/stats.png) | ![The Bible](docs/screenshots/bible.png) |
+|:----------:|:---------:|:---------------:|:---------:|
+| <img src="docs/screenshots/leaderboard.png" width="200" alt="Leaderboard"> | <img src="docs/screenshots/log-game.png" width="200" alt="Log Game"> | <img src="docs/screenshots/stats.png" width="200" alt="Stats Dashboard"> | <img src="docs/screenshots/bible.png" width="200" alt="The Bible"> |
 
 ***
 
