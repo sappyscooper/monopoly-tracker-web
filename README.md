@@ -36,11 +36,11 @@
 
 ## 📸 Screenshots
 
-> _App running on iPhone — add your own screenshots to `/docs/screenshots/` and reference them here._
+> _Screenshots taken on mobile — live demo at [monopoly-tracker-web.vercel.app](https://monopoly-tracker-web.vercel.app)._
 
 | Leaderboard | Log Game | Stats Dashboard | The Bible |
 |:-----------:|:--------:|:---------------:|:---------:|
-| _(screenshot)_ | _(screenshot)_ | _(screenshot)_ | _(screenshot)_ |
+| ![Leaderboard](docs/screenshots/leaderboard.png) | ![Log Game](docs/screenshots/log-game.png) | ![Stats Dashboard](docs/screenshots/stats.png) | ![The Bible](docs/screenshots/bible.png) |
 
 ***
 
