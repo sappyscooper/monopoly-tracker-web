@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { animated, useSpring } from 'react-spring';
 import { BookOpen, Plus } from 'lucide-react';
 import Sheet from '../components/Sheet';
+import AdminPasswordModal from '../components/AdminPasswordModal';
+import { useAdminAuth } from '../hooks/useAdminAuth';
 import { useRules } from '../hooks/useRules';
 
 function paginateRules(rules) {
@@ -183,6 +185,7 @@ function ParchmentPage({ pageNumber, totalPages, rules, turning, onRequestEdit, 
 }
 
 function EditRuleSheet({ rule, onClose, onUpdateRule }) {
+  const { showPasswordModal, error, requireAuth, submitPassword, dismissModal } = useAdminAuth();
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [saving, setSaving] = useState(false);
@@ -194,16 +197,18 @@ function EditRuleSheet({ rule, onClose, onUpdateRule }) {
     setSaving(false);
   }, [rule]);
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     if (!rule || !title.trim() || !body.trim() || saving) return;
-    setSaving(true);
-    try {
-      await onUpdateRule(rule.id, title.trim(), body.trim());
-      onClose();
-    } catch (error) {
-      console.error(error);
-      setSaving(false);
-    }
+    requireAuth(async () => {
+      setSaving(true);
+      try {
+        await onUpdateRule(rule.id, title.trim(), body.trim());
+        onClose();
+      } catch (submitError) {
+        console.error(submitError);
+        setSaving(false);
+      }
+    });
   };
 
   return (
@@ -239,6 +244,13 @@ function EditRuleSheet({ rule, onClose, onUpdateRule }) {
           {saving ? 'Amending...' : '✦ Commit This Amendment ✦'}
         </button>
       </div>
+      {showPasswordModal && (
+        <AdminPasswordModal
+          onSubmit={submitPassword}
+          onDismiss={dismissModal}
+          error={error}
+        />
+      )}
     </Sheet>
   );
 }
@@ -265,6 +277,7 @@ function DeleteRuleSheet({ rule, deleting, onClose, onConfirm }) {
 }
 
 function AddRuleSheet({ open, onClose, onAddRule }) {
+  const { showPasswordModal, error, requireAuth, submitPassword, dismissModal } = useAdminAuth();
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [saving, setSaving] = useState(false);
@@ -276,16 +289,18 @@ function AddRuleSheet({ open, onClose, onAddRule }) {
     setSaving(false);
   }, [open]);
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     if (!title.trim() || !body.trim() || saving) return;
-    setSaving(true);
-    try {
-      await onAddRule(title.trim(), body.trim());
-      onClose();
-    } catch (error) {
-      console.error(error);
-      setSaving(false);
-    }
+    requireAuth(async () => {
+      setSaving(true);
+      try {
+        await onAddRule(title.trim(), body.trim());
+        onClose();
+      } catch (submitError) {
+        console.error(submitError);
+        setSaving(false);
+      }
+    });
   };
 
   return (
@@ -321,11 +336,19 @@ function AddRuleSheet({ open, onClose, onAddRule }) {
           {saving ? 'Inscribing...' : '✦ Inscribe This Law ✦'}
         </button>
       </div>
+      {showPasswordModal && (
+        <AdminPasswordModal
+          onSubmit={submitPassword}
+          onDismiss={dismissModal}
+          error={error}
+        />
+      )}
     </Sheet>
   );
 }
 
 export default function RulesPage() {
+  const { showPasswordModal, error: passwordError, requireAuth, submitPassword, dismissModal } = useAdminAuth();
   const { rules, loading, error, addRule, updateRule, deleteRule } = useRules();
   const [bookState, setBookState] = useState('cover');
   const [currentPage, setCurrentPage] = useState(0);
@@ -415,18 +438,20 @@ export default function RulesPage() {
 
   const handleDeleteRule = async () => {
     if (!ruleToDelete || deletingRule) return;
-    setDeletingRule(true);
-    try {
-      await deleteRule(ruleToDelete.id);
-      setRuleToDelete(null);
-      if (pageRules.length === 1 && currentPage > 0) {
-        setCurrentPage(page => page - 1);
+    requireAuth(async () => {
+      setDeletingRule(true);
+      try {
+        await deleteRule(ruleToDelete.id);
+        setRuleToDelete(null);
+        if (pageRules.length === 1 && currentPage > 0) {
+          setCurrentPage(page => page - 1);
+        }
+      } catch (deleteError) {
+        console.error(deleteError);
+      } finally {
+        setDeletingRule(false);
       }
-    } catch (deleteError) {
-      console.error(deleteError);
-    } finally {
-      setDeletingRule(false);
-    }
+    });
   };
 
   if (bookState !== 'open') {
@@ -493,6 +518,13 @@ export default function RulesPage() {
           deleting={deletingRule}
           onClose={() => setRuleToDelete(null)}
           onConfirm={handleDeleteRule}
+        />
+      )}
+      {showPasswordModal && (
+        <AdminPasswordModal
+          onSubmit={submitPassword}
+          onDismiss={dismissModal}
+          error={passwordError}
         />
       )}
     </main>

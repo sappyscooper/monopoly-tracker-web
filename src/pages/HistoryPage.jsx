@@ -23,11 +23,14 @@ import {
   normalizeParticipantName,
 } from '../utils/gameForm';
 import { AbsentRow, PlayerRow } from '../components/GamePlacementRows';
+import AdminPasswordModal from '../components/AdminPasswordModal';
 import GlassCard from '../components/GlassCard';
 import EmptyState from '../components/EmptyState';
 import Sheet from '../components/Sheet';
+import { useAdminAuth } from '../hooks/useAdminAuth';
 
 function EditGameSheet({ game, season, games, onClose }) {
+  const { showPasswordModal, error, requireAuth, submitPassword, dismissModal } = useAdminAuth();
   const [gameDate, setGameDate] = useState(gameDateInputValue(game));
   const [entries, setEntries] = useState(() => makeGameEntries(season, game));
   const [cameoInput, setCameoInput] = useState('');
@@ -86,21 +89,24 @@ function EditGameSheet({ game, season, games, onClose }) {
 
   const removeCameo = (id) => setEntries(prev => prev.filter(entry => entry.id !== id));
 
-  const handleSave = async () => {
+  const handleSave = () => {
     if (!canSave) return;
-    setSaving(true);
-    try {
-      await updateDoc(doc(db, 'games', game.id), {
-        date: Timestamp.fromDate(new Date(`${gameDate}T12:00:00`)),
-        placements,
-        updatedAt: serverTimestamp(),
-      });
-      onClose();
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setSaving(false);
-    }
+
+    requireAuth(async () => {
+      setSaving(true);
+      try {
+        await updateDoc(doc(db, 'games', game.id), {
+          date: Timestamp.fromDate(new Date(`${gameDate}T12:00:00`)),
+          placements,
+          updatedAt: serverTimestamp(),
+        });
+        onClose();
+      } catch (saveError) {
+        console.error(saveError);
+      } finally {
+        setSaving(false);
+      }
+    });
   };
 
   return (
@@ -204,11 +210,19 @@ function EditGameSheet({ game, season, games, onClose }) {
           <button onClick={onClose} className="secondary-button">Cancel</button>
         </div>
       </div>
+      {showPasswordModal && (
+        <AdminPasswordModal
+          onSubmit={submitPassword}
+          onDismiss={dismissModal}
+          error={error}
+        />
+      )}
     </Sheet>
   );
 }
 
 function GameRow({ game, season, games }) {
+  const { showPasswordModal, error, requireAuth, submitPassword, dismissModal } = useAdminAuth();
   const [expanded, setExpanded] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -226,10 +240,12 @@ function GameRow({ game, season, games }) {
     weekday: 'short', day: 'numeric', month: 'short'
   }) : 'Unknown date';
 
-  const handleDelete = async () => {
-    await deleteDoc(doc(db, 'games', game.id));
-    setDeleteConfirm(false);
-    setDeleteRevealed(false);
+  const handleDelete = () => {
+    requireAuth(async () => {
+      await deleteDoc(doc(db, 'games', game.id));
+      setDeleteConfirm(false);
+      setDeleteRevealed(false);
+    });
   };
 
   const handleTouchMove = (event) => {
@@ -313,6 +329,13 @@ function GameRow({ game, season, games }) {
           <button onClick={() => setDeleteConfirm(false)} className="secondary-button">Cancel</button>
         </div>
       </Sheet>
+      {showPasswordModal && (
+        <AdminPasswordModal
+          onSubmit={submitPassword}
+          onDismiss={dismissModal}
+          error={error}
+        />
+      )}
       {editing && (
         <EditGameSheet
           game={game}

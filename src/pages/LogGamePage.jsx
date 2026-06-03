@@ -23,9 +23,11 @@ import {
   normalizeParticipantName,
 } from '../utils/gameForm';
 import { AbsentRow, PlayerRow } from '../components/GamePlacementRows';
+import AdminPasswordModal from '../components/AdminPasswordModal';
 import GlassCard from '../components/GlassCard';
 import EmptyState from '../components/EmptyState';
 import Sheet from '../components/Sheet';
+import { useAdminAuth } from '../hooks/useAdminAuth';
 
 function DateSheet({ value, onChange, onClose }) {
   return (
@@ -44,6 +46,7 @@ function DateSheet({ value, onChange, onClose }) {
 export default function LogGamePage() {
   const { activeSeason: season } = useActiveSeason();
   const { games: previousGames } = useGames(season?.id);
+  const { showPasswordModal, error, requireAuth, submitPassword, dismissModal } = useAdminAuth();
   const [gameDate, setGameDate] = useState(new Date().toISOString().split('T')[0]);
   const [entries, setEntries] = useState([]);
   const [cameoInput, setCameoInput] = useState('');
@@ -119,24 +122,27 @@ export default function LogGamePage() {
     setCameoInput('');
   };
 
-  const handleSave = async () => {
+  const handleSave = () => {
     if (!canSubmit || !season) return;
-    setSaving(true);
-    try {
-      await addDoc(collection(db, 'games'), {
-        seasonId: season.id,
-        date: Timestamp.fromDate(new Date(`${gameDate}T12:00:00`)),
-        placements,
-        createdAt: serverTimestamp(),
-      });
-      resetForm();
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setSaving(false);
-    }
+
+    requireAuth(async () => {
+      setSaving(true);
+      try {
+        await addDoc(collection(db, 'games'), {
+          seasonId: season.id,
+          date: Timestamp.fromDate(new Date(`${gameDate}T12:00:00`)),
+          placements,
+          createdAt: serverTimestamp(),
+        });
+        resetForm();
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+      } catch (saveError) {
+        console.error(saveError);
+      } finally {
+        setSaving(false);
+      }
+    });
   };
 
   const formattedDate = new Date(`${gameDate}T12:00:00`).toLocaleDateString('en-AU', {
@@ -274,6 +280,13 @@ export default function LogGamePage() {
             <DateSheet value={gameDate} onChange={setGameDate} onClose={() => setShowDateSheet(false)} />
           )}
         </AnimatePresence>
+        {showPasswordModal && (
+          <AdminPasswordModal
+            onSubmit={submitPassword}
+            onDismiss={dismissModal}
+            error={error}
+          />
+        )}
       </div>
     </div>
   );

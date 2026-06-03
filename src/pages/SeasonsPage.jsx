@@ -9,6 +9,8 @@ import GlassCard from '../components/GlassCard';
 import StatusPill from '../components/StatusPill';
 import EmptyState from '../components/EmptyState';
 import Sheet from '../components/Sheet';
+import AdminPasswordModal from '../components/AdminPasswordModal';
+import { useAdminAuth } from '../hooks/useAdminAuth';
 import { seasonLeaderboard, formatPoints } from '../utils/scoring';
 
 const DEFAULT_PLAYERS = ['Cheok', 'Cheng', 'Breydon', 'Ian', 'Jedd'];
@@ -95,6 +97,7 @@ function SeasonCard({ season, onLongPress, onDeleteRequest, onSetActive, activat
 }
 
 function CreateSeasonModal({ onClose, onCreated }) {
+  const { showPasswordModal, error, requireAuth, submitPassword, dismissModal } = useAdminAuth();
   const [name, setName] = useState('');
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(
@@ -141,30 +144,33 @@ function CreateSeasonModal({ onClose, onCreated }) {
     return { valid: Object.keys(nextErrors).length === 0, uniquePlayers };
   };
 
-  const handleCreate = async () => {
+  const handleCreate = () => {
     const { valid, uniquePlayers } = validate();
     if (!valid) return;
-    setSaving(true);
-    try {
-      const snap = await getDocs(collection(db, 'seasons'));
-      const batch = writeBatch(db);
-      snap.docs.forEach(d => {
-        if (d.data().isActive) batch.update(d.ref, { isActive: false });
-      });
-      await batch.commit();
-      await addDoc(collection(db, 'seasons'), {
-        name: name.trim(),
-        startDate: new Date(startDate),
-        endDate: new Date(endDate),
-        regularPlayers: uniquePlayers,
-        isActive: true,
-        createdAt: serverTimestamp(),
-      });
-      onCreated();
-    } catch (e) {
-      console.error(e);
-      setSaving(false);
-    }
+
+    requireAuth(async () => {
+      setSaving(true);
+      try {
+        const snap = await getDocs(collection(db, 'seasons'));
+        const batch = writeBatch(db);
+        snap.docs.forEach(d => {
+          if (d.data().isActive) batch.update(d.ref, { isActive: false });
+        });
+        await batch.commit();
+        await addDoc(collection(db, 'seasons'), {
+          name: name.trim(),
+          startDate: new Date(startDate),
+          endDate: new Date(endDate),
+          regularPlayers: uniquePlayers,
+          isActive: true,
+          createdAt: serverTimestamp(),
+        });
+        onCreated();
+      } catch (e) {
+        console.error(e);
+        setSaving(false);
+      }
+    });
   };
 
   return (
@@ -231,17 +237,27 @@ function CreateSeasonModal({ onClose, onCreated }) {
           <button onClick={onClose} className="secondary-button">Cancel</button>
         </section>
       </div>
+      {showPasswordModal && (
+        <AdminPasswordModal
+          onSubmit={submitPassword}
+          onDismiss={dismissModal}
+          error={error}
+        />
+      )}
     </Sheet>
   );
 }
 
 function EndSeasonModal({ season, onClose, onConfirm }) {
+  const { showPasswordModal, error, requireAuth, submitPassword, dismissModal } = useAdminAuth();
   const { games } = useGames(season?.id);
   const [confirming, setConfirming] = useState(false);
   const standings = seasonLeaderboard(games || [], season?.regularPlayers || []).slice(0, 3);
-  const handleConfirm = async () => {
-    setConfirming(true);
-    await onConfirm(season);
+  const handleConfirm = () => {
+    requireAuth(async () => {
+      setConfirming(true);
+      await onConfirm(season);
+    });
   };
   return (
     <Sheet open title="End Season?" subtitle={season.name} onClose={onClose}>
@@ -269,26 +285,36 @@ function EndSeasonModal({ season, onClose, onConfirm }) {
           <button onClick={onClose} className="secondary-button">Cancel</button>
         </div>
       </div>
+      {showPasswordModal && (
+        <AdminPasswordModal
+          onSubmit={submitPassword}
+          onDismiss={dismissModal}
+          error={error}
+        />
+      )}
     </Sheet>
   );
 }
 
 function DeleteSeasonModal({ season, onClose, onConfirm }) {
+  const { showPasswordModal, error: passwordError, requireAuth, submitPassword, dismissModal } = useAdminAuth();
   const { games } = useGames(season?.id);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState('');
 
   const handleDelete = async () => {
     if (deleting) return;
-    setDeleting(true);
-    setError('');
-    try {
-      await onConfirm(season);
-    } catch (e) {
-      console.error(e);
-      setError('Could not delete this season. Try again in a moment.');
-      setDeleting(false);
-    }
+    requireAuth(async () => {
+      setDeleting(true);
+      setError('');
+      try {
+        await onConfirm(season);
+      } catch (e) {
+        console.error(e);
+        setError('Could not delete this season. Try again in a moment.');
+        setDeleting(false);
+      }
+    });
   };
 
   return (
@@ -319,11 +345,19 @@ function DeleteSeasonModal({ season, onClose, onConfirm }) {
           <button onClick={onClose} disabled={deleting} className="secondary-button disabled:opacity-50">Cancel</button>
         </div>
       </div>
+      {showPasswordModal && (
+        <AdminPasswordModal
+          onSubmit={submitPassword}
+          onDismiss={dismissModal}
+          error={error}
+        />
+      )}
     </Sheet>
   );
 }
 
 export default function SeasonsPage() {
+  const { showPasswordModal, error, requireAuth, submitPassword, dismissModal } = useAdminAuth();
   const { seasons, loading } = useSeasons();
   const [showCreate, setShowCreate] = useState(false);
   const [endingSeason, setEndingSeason] = useState(null);
@@ -354,19 +388,21 @@ export default function SeasonsPage() {
 
   const handleSetActiveSeason = async (season) => {
     if (!season?.id || activatingSeasonId) return;
-    setActivatingSeasonId(season.id);
-    try {
-      const snap = await getDocs(collection(db, 'seasons'));
-      const batch = writeBatch(db);
-      snap.docs.forEach(seasonDoc => {
-        batch.update(seasonDoc.ref, { isActive: seasonDoc.id === season.id });
-      });
-      await batch.commit();
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setActivatingSeasonId(null);
-    }
+    requireAuth(async () => {
+      setActivatingSeasonId(season.id);
+      try {
+        const snap = await getDocs(collection(db, 'seasons'));
+        const batch = writeBatch(db);
+        snap.docs.forEach(seasonDoc => {
+          batch.update(seasonDoc.ref, { isActive: seasonDoc.id === season.id });
+        });
+        await batch.commit();
+      } catch (activeError) {
+        console.error(activeError);
+      } finally {
+        setActivatingSeasonId(null);
+      }
+    });
   };
 
   if (loading) return (
@@ -421,6 +457,13 @@ export default function SeasonsPage() {
           {endingSeason && <EndSeasonModal season={endingSeason} onClose={() => setEndingSeason(null)} onConfirm={handleEndSeason} />}
           {deletingSeason && <DeleteSeasonModal season={deletingSeason} onClose={() => setDeletingSeason(null)} onConfirm={handleDeleteSeason} />}
         </AnimatePresence>
+        {showPasswordModal && (
+          <AdminPasswordModal
+            onSubmit={submitPassword}
+            onDismiss={dismissModal}
+            error={passwordError}
+          />
+        )}
       </div>
     </div>
   );
