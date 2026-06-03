@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
+import { DEMO_GAMES } from '../demoData';
+
+const IS_DEMO = import.meta.env.VITE_IS_DEMO === 'true';
 
 export function useGames(seasonId) {
   const [games, setGames] = useState([]);
@@ -8,6 +11,12 @@ export function useGames(seasonId) {
 
   useEffect(() => {
     if (!seasonId) { setGames([]); setLoading(false); return; }
+    if (IS_DEMO) {
+      setGames(DEMO_GAMES.filter(game => game.seasonId === seasonId));
+      setLoading(false);
+      return undefined;
+    }
+
     const q = query(
       collection(db, 'games'),
       where('seasonId', '==', seasonId)

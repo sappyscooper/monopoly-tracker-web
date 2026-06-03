@@ -4,6 +4,16 @@
 
 ### Real-time multiplayer season tracking for competitive board games
 
+## 🎮 Try it live
+
+| | |
+|---|---|
+| **Public Demo** — sample data, no password needed | [Open demo](https://monotrack-demo.vercel.app) |
+| **GitHub Source** | [View repository](https://github.com/sappyscooper/monopoly-tracker-web) |
+
+> The demo runs on isolated bundled sample data and never connects to a private Firebase project.
+> Your own deployment can use its own Firebase project and password gate — completely isolated.
+
 [![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=0a0a0f)](https://react.dev)
 [![Vite](https://img.shields.io/badge/Vite-5-646CFF?logo=vite&logoColor=white)](https://vitejs.dev)
 [![Firebase](https://img.shields.io/badge/Firebase-Firestore-FFCA28?logo=firebase&logoColor=0a0a0f)](https://firebase.google.com)
@@ -12,8 +22,6 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-E8C96A.svg)](LICENSE)
 
 **MonoTracker** is an open-source, real-time Progressive Web App for tracking competitive multiplayer game seasons. Built for friend groups who take their board game nights seriously — featuring live leaderboards, statistical analytics, season management, editable game history, and a custom rules system.
-
-[**→ Try the Live Demo**](https://monopoly-tracker-web.vercel.app) · [Report Bug](https://github.com/sappyscooper/monopoly-tracker-web/issues) · [Request Feature](https://github.com/sappyscooper/monopoly-tracker-web/issues)
 
 </div>
 
@@ -36,11 +44,15 @@
 
 ## 📸 Screenshots
 
-> _Screenshots taken on mobile — live demo at [monopoly-tracker-web.vercel.app](https://monopoly-tracker-web.vercel.app)._
+> _Screenshots taken on mobile — live demo at [monotrack-demo.vercel.app](https://monotrack-demo.vercel.app)._
 
-| Leaderboard | Log Game | Stats Dashboard | The Bible |
-|:----------:|:---------:|:---------------:|:---------:|
+| Board | Log Game | Season Stats | The Bible |
+|:-----:|:--------:|:------------:|:---------:|
 | <img src="docs/screenshots/leaderboard.jpg.jpeg" width="200" alt="Leaderboard"> | <img src="docs/screenshots/log-game.jpg.jpeg" width="200" alt="Log Game"> | <img src="docs/screenshots/stats.jpg.jpeg" width="200" alt="Stats Dashboard"> | <img src="docs/screenshots/bible.jpg.jpeg" width="200" alt="The Bible"> |
+
+| Seasons | History |
+|:-------:|:-------:|
+| <img src="docs/screenshots/seasons.jpg.jpeg" width="200" alt="Seasons"> | <img src="docs/screenshots/history.jpg.jpeg" width="200" alt="History"> |
 
 ***
 
@@ -86,23 +98,34 @@ npm install
 
 Create a Firebase project at [console.firebase.google.com](https://console.firebase.google.com). Enable **Firestore Database**.
 
-Create `src/firebase.js` with your project config:
+Create `src/firebase.js` with the env-based Firebase initializer:
 
 ```js
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
+```
+
+Then create `.env.local`:
+
+```bash
+VITE_FIREBASE_API_KEY=YOUR_API_KEY
+VITE_FIREBASE_AUTH_DOMAIN=YOUR_PROJECT.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=YOUR_PROJECT_ID
+VITE_FIREBASE_STORAGE_BUCKET=YOUR_PROJECT.appspot.com
+VITE_FIREBASE_MESSAGING_SENDER_ID=YOUR_SENDER_ID
+VITE_FIREBASE_APP_ID=YOUR_APP_ID
 ```
 
 ### 4. Set up Firestore Security Rules
@@ -235,7 +258,7 @@ src/
 │   ├── gameForm.js          # Placement editing and cameo-name helpers
 │   └── scoring.js           # Shared scoring engine
 ├── App.jsx                  # Router + layout
-├── firebase.js              # Firebase initialization
+├── firebase.js              # Local Firebase initialization file (gitignored)
 ├── index.css                # Global app styling
 ├── main.jsx                 # Entry point
 └── pwaUpdates.js            # Service worker update handling

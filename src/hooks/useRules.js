@@ -14,8 +14,10 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { db } from '../firebase';
+import { DEMO_RULES } from '../demoData';
 
 const CURRENT_VERSION = 2;
+const IS_DEMO = import.meta.env.VITE_IS_DEMO === 'true';
 
 const NEW_RULES = [
   {
@@ -136,7 +138,40 @@ async function seedRules() {
   }
 }
 
-export function useRules() {
+function useDemoRules() {
+  const [rules, setRules] = useState(DEMO_RULES);
+
+  const addRule = async (title, body) => {
+    setRules(prev => [
+      ...prev,
+      {
+        id: `demo-rule-${Date.now()}`,
+        title,
+        body,
+        order: prev.length,
+        createdAt: Timestamp.now(),
+      },
+    ]);
+  };
+
+  const updateRule = async (ruleId, title, body) => {
+    setRules(prev => prev.map(rule => (
+      rule.id === ruleId
+        ? { ...rule, title, body, updatedAt: Timestamp.now() }
+        : rule
+    )));
+  };
+
+  const deleteRule = async (ruleId) => {
+    setRules(prev => prev
+      .filter(rule => rule.id !== ruleId)
+      .map((rule, index) => ({ ...rule, order: index })));
+  };
+
+  return { rules, loading: false, error: null, addRule, updateRule, deleteRule };
+}
+
+function useFirestoreRules() {
   const [rules, setRules] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -205,4 +240,8 @@ export function useRules() {
   };
 
   return { rules, loading, error, addRule, updateRule, deleteRule };
+}
+
+export function useRules() {
+  return IS_DEMO ? useDemoRules() : useFirestoreRules();
 }

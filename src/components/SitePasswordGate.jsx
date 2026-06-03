@@ -2,8 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { isUnlocked, unlock } from '../hooks/useAdminAuth';
 
 const ADMIN_PASSWORD = 'thedegens';
+const IS_DEMO = import.meta.env.VITE_IS_DEMO === 'true';
 
 export default function SitePasswordGate({ children }) {
+  if (IS_DEMO) return children;
+
   const [authenticated, setAuthenticated] = useState(isUnlocked());
   const [value, setValue] = useState('');
   const [error, setError] = useState('');

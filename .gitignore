@@ -1,5 +1,11 @@
 node_modules
 dist
 .env
+.env.local
+.env.production
+.env.demo
 .DS_Store
 .vercel
+src/firebase.js
+scripts/seed-demo.js
+scripts/seed-demo.mjs

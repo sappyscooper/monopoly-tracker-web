@@ -11,6 +11,7 @@ import EmptyState from '../components/EmptyState';
 import Sheet from '../components/Sheet';
 import { seasonLeaderboard, formatPoints } from '../utils/scoring';
 
+const IS_DEMO = import.meta.env.VITE_IS_DEMO === 'true';
 const DEFAULT_PLAYERS = ['Cheok', 'Cheng', 'Breydon', 'Ian', 'Jedd'];
 
 function SeasonCard({ season, onLongPress, onDeleteRequest, onSetActive, activating }) {
@@ -144,6 +145,12 @@ function CreateSeasonModal({ onClose, onCreated }) {
   const handleCreate = () => {
     const { valid, uniquePlayers } = validate();
     if (!valid) return;
+
+    if (IS_DEMO) {
+      setSaving(true);
+      window.setTimeout(onCreated, 300);
+      return;
+    }
 
     setSaving(true);
     (async () => {
@@ -334,12 +341,22 @@ export default function SeasonsPage() {
   const [activatingSeasonId, setActivatingSeasonId] = useState(null);
 
   const handleEndSeason = async (season) => {
+    if (IS_DEMO) {
+      setEndingSeason(null);
+      return;
+    }
+
     await updateDoc(doc(db, 'seasons', season.id), { isActive: false });
     setEndingSeason(null);
   };
 
   const handleDeleteSeason = async (season) => {
     if (!season?.id) return;
+    if (IS_DEMO) {
+      setDeletingSeason(null);
+      return;
+    }
+
     const gamesQuery = query(collection(db, 'games'), where('seasonId', '==', season.id));
     const gamesSnap = await getDocs(gamesQuery);
     const refsToDelete = [
@@ -357,6 +374,12 @@ export default function SeasonsPage() {
 
   const handleSetActiveSeason = async (season) => {
     if (!season?.id || activatingSeasonId) return;
+    if (IS_DEMO) {
+      setActivatingSeasonId(season.id);
+      window.setTimeout(() => setActivatingSeasonId(null), 300);
+      return;
+    }
+
     setActivatingSeasonId(season.id);
     try {
       const snap = await getDocs(collection(db, 'seasons'));

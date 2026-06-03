@@ -27,6 +27,8 @@ import GlassCard from '../components/GlassCard';
 import EmptyState from '../components/EmptyState';
 import Sheet from '../components/Sheet';
 
+const IS_DEMO = import.meta.env.VITE_IS_DEMO === 'true';
+
 function EditGameSheet({ game, season, games, onClose }) {
   const [gameDate, setGameDate] = useState(gameDateInputValue(game));
   const [entries, setEntries] = useState(() => makeGameEntries(season, game));
@@ -88,6 +90,12 @@ function EditGameSheet({ game, season, games, onClose }) {
 
   const handleSave = () => {
     if (!canSave) return;
+
+    if (IS_DEMO) {
+      setSaving(true);
+      window.setTimeout(onClose, 250);
+      return;
+    }
 
     setSaving(true);
     (async () => {
@@ -230,6 +238,12 @@ function GameRow({ game, season, games }) {
   }) : 'Unknown date';
 
   const handleDelete = () => {
+    if (IS_DEMO) {
+      setDeleteConfirm(false);
+      setDeleteRevealed(false);
+      return;
+    }
+
     (async () => {
       await deleteDoc(doc(db, 'games', game.id));
       setDeleteConfirm(false);

@@ -27,6 +27,8 @@ import GlassCard from '../components/GlassCard';
 import EmptyState from '../components/EmptyState';
 import Sheet from '../components/Sheet';
 
+const IS_DEMO = import.meta.env.VITE_IS_DEMO === 'true';
+
 function DateSheet({ value, onChange, onClose }) {
   return (
     <Sheet open title="Game Date" onClose={onClose}>
@@ -121,6 +123,17 @@ export default function LogGamePage() {
 
   const handleSave = () => {
     if (!canSubmit || !season) return;
+
+    if (IS_DEMO) {
+      setSaving(true);
+      window.setTimeout(() => {
+        resetForm();
+        setSaved(true);
+        setSaving(false);
+        setTimeout(() => setSaved(false), 2000);
+      }, 300);
+      return;
+    }
 
     setSaving(true);
     (async () => {
