@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CircleDot, Plus, Trash2 } from 'lucide-react';
+import { CircleDot, Pencil, Plus, Trash2 } from 'lucide-react';
 import { collection, addDoc, doc, updateDoc, serverTimestamp, writeBatch, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useSeasons } from '../hooks/useSeasons';
@@ -14,7 +14,7 @@ import { seasonLeaderboard, formatPoints } from '../utils/scoring';
 const IS_DEMO = import.meta.env.VITE_IS_DEMO === 'true';
 const DEFAULT_PLAYERS = ['Cheok', 'Cheng', 'Breydon', 'Ian', 'Jedd'];
 
-function SeasonCard({ season, onLongPress, onDeleteRequest, onSetActive, activating }) {
+function SeasonCard({ season, onLongPress, onDeleteRequest, onRenameRequest, onSetActive, activating }) {
   const { games } = useGames(season.id);
   const pressTimer = useRef(null);
 
@@ -47,6 +47,20 @@ function SeasonCard({ season, onLongPress, onDeleteRequest, onSetActive, activat
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <StatusPill active={season.isActive} />
+            <button
+              type="button"
+              className="season-edit-button"
+              aria-label={`Rename ${season.name}`}
+              onPointerDown={stopCardPress}
+              onMouseDown={stopCardPress}
+              onTouchStart={stopCardPress}
+              onClick={(event) => {
+                stopCardPress(event);
+                onRenameRequest(season);
+              }}
+            >
+              <Pencil size={15} />
+            </button>
             <button
               type="button"
               className="season-delete-button"
@@ -92,6 +106,63 @@ function SeasonCard({ season, onLongPress, onDeleteRequest, onSetActive, activat
         )}
       </GlassCard>
     </motion.div>
+  );
+}
+
+function RenameSeasonModal({ season, onClose, onConfirm }) {
+  const [name, setName] = useState(season?.name || '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSave = async () => {
+    const nextName = name.trim();
+    if (!nextName) {
+      setError('Season name is required');
+      return;
+    }
+    if (nextName === season.name) {
+      onClose();
+      return;
+    }
+
+    setSaving(true);
+    setError('');
+    try {
+      await onConfirm(season, nextName);
+    } catch (renameError) {
+      console.error(renameError);
+      setError('Could not rename this season. Try again in a moment.');
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Sheet open title="Rename Season" subtitle={season.name} onClose={onClose}>
+      <div className="form-stack">
+        <section>
+          <label className="form-section-label">Season Name</label>
+          <input
+            value={name}
+            onChange={event => {
+              setName(event.target.value);
+              setError('');
+            }}
+            onKeyDown={event => {
+              if (event.key === 'Enter') handleSave();
+            }}
+            autoFocus
+            className="control"
+          />
+          {error && <p className="inline-error">{error}</p>}
+        </section>
+        <section className="space-y-3">
+          <button onClick={handleSave} disabled={saving} className="primary-button disabled:opacity-50">
+            {saving ? 'Saving...' : 'Save Name'}
+          </button>
+          <button onClick={onClose} disabled={saving} className="secondary-button disabled:opacity-50">Cancel</button>
+        </section>
+      </div>
+    </Sheet>
   );
 }
 
@@ -338,7 +409,22 @@ export default function SeasonsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [endingSeason, setEndingSeason] = useState(null);
   const [deletingSeason, setDeletingSeason] = useState(null);
+  const [renamingSeason, setRenamingSeason] = useState(null);
   const [activatingSeasonId, setActivatingSeasonId] = useState(null);
+
+  const handleRenameSeason = async (season, name) => {
+    if (!season?.id) return;
+    if (IS_DEMO) {
+      setRenamingSeason(null);
+      return;
+    }
+
+    await updateDoc(doc(db, 'seasons', season.id), {
+      name,
+      updatedAt: serverTimestamp(),
+    });
+    setRenamingSeason(null);
+  };
 
   const handleEndSeason = async (season) => {
     if (IS_DEMO) {
@@ -434,6 +520,7 @@ export default function SeasonsPage() {
                   season={s}
                   onLongPress={setEndingSeason}
                   onDeleteRequest={setDeletingSeason}
+                  onRenameRequest={setRenamingSeason}
                   onSetActive={handleSetActiveSeason}
                   activating={activatingSeasonId === s.id}
                 />
@@ -446,6 +533,7 @@ export default function SeasonsPage() {
           {showCreate && <CreateSeasonModal onClose={() => setShowCreate(false)} onCreated={() => setShowCreate(false)} />}
           {endingSeason && <EndSeasonModal season={endingSeason} onClose={() => setEndingSeason(null)} onConfirm={handleEndSeason} />}
           {deletingSeason && <DeleteSeasonModal season={deletingSeason} onClose={() => setDeletingSeason(null)} onConfirm={handleDeleteSeason} />}
+          {renamingSeason && <RenameSeasonModal season={renamingSeason} onClose={() => setRenamingSeason(null)} onConfirm={handleRenameSeason} />}
         </AnimatePresence>
       </div>
     </div>

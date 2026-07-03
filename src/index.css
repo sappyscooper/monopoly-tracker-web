@@ -352,17 +352,33 @@ button:disabled {
   border: 0;
 }
 
+.season-edit-button,
 .season-delete-button {
   width: 34px;
   height: 34px;
   display: grid;
   place-items: center;
   flex: 0 0 auto;
-  border: 1px solid rgba(224,123,106,0.28);
   border-radius: 999px;
+  transition: transform 150ms ease, opacity 150ms ease, background 150ms ease;
+}
+
+.season-edit-button {
+  border: 1px solid rgba(110,181,212,0.28);
+  background: rgba(110,181,212,0.12);
+  color: var(--blue);
+}
+
+.season-delete-button {
+  border: 1px solid rgba(224,123,106,0.28);
   background: rgba(224,123,106,0.12);
   color: var(--rose);
-  transition: transform 150ms ease, opacity 150ms ease, background 150ms ease;
+}
+
+.season-edit-button:active {
+  transform: scale(0.94);
+  opacity: 0.78;
+  background: rgba(110,181,212,0.20);
 }
 
 .season-delete-button:active {
@@ -813,6 +829,12 @@ button:disabled {
   gap: 12px;
 }
 
+.stats-filter-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .stats-scope-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -839,6 +861,42 @@ button:disabled {
   background: rgba(232,201,106,0.14);
   color: var(--gold);
   box-shadow: inset 0 0 0 1px rgba(232,201,106,0.24);
+}
+
+.stats-season-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 72px) minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.04);
+}
+
+.stats-season-picker span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.stats-season-picker select {
+  min-height: 38px;
+  min-width: 0;
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text);
+  padding: 8px 10px;
+  font-size: 16px;
+  outline: none;
+}
+
+.stats-season-picker select:disabled {
+  opacity: 0.55;
 }
 
 .stats-card-header {

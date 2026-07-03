@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { Info } from 'lucide-react';
 import { useActiveSeason } from '../hooks/useActiveSeason';
@@ -238,9 +238,23 @@ function computeStats(season, games, options = {}) {
 
 export default function StatsPage() {
   const [scope, setScope] = useState('season');
+  const [selectedSeasonId, setSelectedSeasonId] = useState('');
   const { activeSeason: season, seasons, loading: seasonsLoading } = useActiveSeason();
-  const { games, loading: gamesLoading } = useGames(season?.id);
+  const selectedSeason = useMemo(() => {
+    if (!seasons?.length) return null;
+    return seasons.find(item => item.id === selectedSeasonId) || season || seasons[0] || null;
+  }, [season, seasons, selectedSeasonId]);
+  const { games, loading: gamesLoading } = useGames(selectedSeason?.id);
   const { games: allGames, loading: allGamesLoading } = useAllGames();
+
+  useEffect(() => {
+    if (!seasons?.length) {
+      setSelectedSeasonId('');
+      return;
+    }
+    if (selectedSeasonId && seasons.some(item => item.id === selectedSeasonId)) return;
+    setSelectedSeasonId((season || seasons[0])?.id || '');
+  }, [season, seasons, selectedSeasonId]);
 
   const lifetimePlayers = useMemo(() => {
     const seen = new Set();
@@ -274,7 +288,7 @@ export default function StatsPage() {
     isActive: true,
   }), [lifetimePlayers, seasons]);
 
-  const seasonStats = useMemo(() => computeStats(season, games || []), [season, games]);
+  const seasonStats = useMemo(() => computeStats(selectedSeason, games || []), [selectedSeason, games]);
   const lifetimeStats = useMemo(() => computeStats(lifetimeSeason, allGames || [], {
     players: lifetimePlayers,
     remainingGames: 0,
@@ -282,7 +296,7 @@ export default function StatsPage() {
   }), [lifetimeSeason, allGames, lifetimePlayers]);
 
   const selectedStats = scope === 'lifetime' ? lifetimeStats : seasonStats;
-  const selectedSeason = scope === 'lifetime' ? lifetimeSeason : season;
+  const displaySeason = scope === 'lifetime' ? lifetimeSeason : selectedSeason;
   const loading = seasonsLoading || gamesLoading || allGamesLoading;
 
   if (loading) return (
@@ -298,7 +312,7 @@ export default function StatsPage() {
     </div>
   );
 
-  if (!season) return (
+  if (!seasons.length) return (
     <div className="page">
       <header className="app-header">
         <div className="app-header-inner">
@@ -306,27 +320,46 @@ export default function StatsPage() {
         </div>
       </header>
       <div className="page-inner">
-        <EmptyState icon="📊" title="No active season" message="Start a season to see your stats unfold." />
+        <EmptyState icon="📊" title="No seasons yet" message="Create a season to see your stats unfold." />
       </div>
     </div>
   );
 
   const ScopeTabs = (
-    <div className="stats-scope-tabs" role="tablist" aria-label="Stats scope">
-      <button
-        type="button"
-        className={scope === 'season' ? 'active' : ''}
-        onClick={() => setScope('season')}
-      >
-        This Season
-      </button>
-      <button
-        type="button"
-        className={scope === 'lifetime' ? 'active' : ''}
-        onClick={() => setScope('lifetime')}
-      >
-        Lifetime
-      </button>
+    <div className="stats-filter-panel">
+      <div className="stats-scope-tabs" role="tablist" aria-label="Stats scope">
+        <button
+          type="button"
+          className={scope === 'season' ? 'active' : ''}
+          onClick={() => setScope('season')}
+        >
+          This Season
+        </button>
+        <button
+          type="button"
+          className={scope === 'lifetime' ? 'active' : ''}
+          onClick={() => setScope('lifetime')}
+        >
+          Lifetime
+        </button>
+      </div>
+      <label className="stats-season-picker">
+        <span>Season</span>
+        <select
+          value={selectedSeason?.id || ''}
+          onChange={event => {
+            setSelectedSeasonId(event.target.value);
+            setScope('season');
+          }}
+          disabled={scope === 'lifetime' || (seasons || []).length <= 1}
+        >
+          {(seasons || []).map(item => (
+            <option key={item.id} value={item.id}>
+              {item.name}{item.isActive ? ' (active)' : ''}
+            </option>
+          ))}
+        </select>
+      </label>
     </div>
   );
 
@@ -336,7 +369,7 @@ export default function StatsPage() {
         <div className="app-header-inner">
           <div className="min-w-0">
             <h1 className="page-title">Season Stats</h1>
-            <p className="secondary-text truncate">{selectedSeason?.name}</p>
+            <p className="secondary-text truncate">{displaySeason?.name}</p>
           </div>
         </div>
       </header>
@@ -359,7 +392,7 @@ export default function StatsPage() {
         <div className="app-header-inner">
           <div className="min-w-0">
             <h1 className="page-title">Season Stats</h1>
-            <p className="secondary-text truncate">{isLifetime ? `${allGames.length} games across ${seasons.length} seasons` : season.name}</p>
+            <p className="secondary-text truncate">{isLifetime ? `${allGames.length} games across ${seasons.length} seasons` : selectedSeason.name}</p>
           </div>
         </div>
       </header>
